@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  state-syncer:
+    build:
+      context: ..
+      dockerfile: state-syncer/Dockerfile
+    image: plinko-state-syncer:latest
+    container_name: plinko-state-syncer
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      # Mount the extracted data from the host
+      # Adjust the host path to match where you extracted data on the server
+      - ./data/plinko-extraction:/data:rw
+      # Mount a directory for public artifacts (deltas, snapshots)
+      - ./data/public:/public:rw
+    environment:
+      - PLINKO_STATE_DB_PATH=/data/database.bin
+      - PLINKO_STATE_ADDRESS_MAPPING_PATH=/data/account-mapping.bin
+      - PLINKO_STATE_PUBLIC_ROOT=/public
+      - PLINKO_STATE_SIMULATED=true
+      # In production, set this to false and provide RPC URL
+      # - PLINKO_STATE_SIMULATED=false
+      # - PLINKO_STATE_RPC_URL=http://your-eth-node:8545
+      - RUST_LOG=info

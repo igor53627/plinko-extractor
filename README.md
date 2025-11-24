@@ -50,6 +50,14 @@ Mapping of storage slots to their index in `database.bin`.
 - Format: `Address (20 bytes) || SlotKey (32 bytes) || Index (4 bytes, LE)`
 - Note: `Index` points to the 1-word entry.
 
+## Client vs. Server Usage
+
+| File | Size (Mainnet) | Server Usage | Client Usage |
+| :--- | :--- | :--- | :--- |
+| **`database.bin`** | ~82 GB | **Store** (Source of Truth). Used to answer PIR queries and compute deltas. | **Stream & Discard**. Client downloads this once to generate ~200MB of local Hints (parities), then deletes the raw data. |
+| **`account-mapping.bin`** | ~7.4 GB | **Store**. Used to locate accounts when processing block updates. | **Store**. Client needs this to resolve `Address -> Index` to know which Hint allows recovering the account data. |
+| **`storage-mapping.bin`** | ~74 GB | **Store**. Used to locate storage slots when processing block updates. | **None / Optional**. Most light clients (wallets) only need Account states. If storage access is needed, a client might query this mapping remotely or store a partial index. |
+
 These artifacts allow a PIR client to look up any account state or storage slot privately.
 
 ## Statistics (Mainnet Snapshot)
