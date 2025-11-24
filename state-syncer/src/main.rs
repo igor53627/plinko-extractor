@@ -3,12 +3,14 @@ mod db;
 mod iprf;
 mod update_manager;
 mod rpc;
+mod address_mapping;
 
 use clap::Parser;
 use config::Config;
 use db::{Database, DB_ENTRY_U64_COUNT};
 use update_manager::{UpdateManager, DBUpdate, HintDelta};
 use rpc::EthClient;
+use address_mapping::AddressMapping;
 use eyre::Result;
 use std::time::Duration;
 use tracing::{info, warn};
@@ -16,8 +18,8 @@ use std::path::Path;
 use std::fs::File;
 use std::io::Write;
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::io::Read;
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 struct Metadata {
@@ -44,11 +46,12 @@ async fn main() -> Result<()> {
     });
 
     // 2. Load Address Mapping
-    let mut address_mapping = HashMap::new();
+    let mut address_mapping = None;
     if !cfg.simulated {
         info!("Loading address mapping from {:?}", cfg.address_mapping_path);
-        address_mapping = load_address_mapping(&cfg.address_mapping_path)?;
-        info!("Loaded {} addresses", address_mapping.len());
+        let mapping = AddressMapping::load(&cfg.address_mapping_path)?;
+        info!("Loaded {} addresses (mmap)", mapping.len());
+        address_mapping = Some(mapping);
     }
     
     // 3. Load Database
@@ -112,7 +115,7 @@ async fn main() -> Result<()> {
                 }
             }).collect()
         } else {
-            match rpc::fetch_updates_rpc(rpc_client.as_ref().unwrap(), next_block, &manager, &address_mapping) {
+            match rpc::fetch_updates_rpc(rpc_client.as_ref().unwrap(), next_block, &manager, address_mapping.as_ref().unwrap()) {
                 Ok(u) => u,
                 Err(e) => {
                     warn!("Failed to fetch updates for block {}: {}. Retrying...", next_block, e);
@@ -155,28 +158,6 @@ async fn main() -> Result<()> {
             tokio::time::sleep(Duration::from_millis(100)).await; // Fast simulation
         }
     }
-}
-
-fn load_address_mapping(path: &Path) -> Result<HashMap<String, u64>> {
-    let mut file = std::io::BufReader::new(File::open(path)?);
-    let mut map = HashMap::new();
-    
-    // Format: Address (20 bytes) || Index (4 bytes)
-    let mut buf = [0u8; 24];
-    loop {
-        match file.read_exact(&mut buf) {
-            Ok(_) => {
-                let addr_bytes = &buf[0..20];
-                let idx_bytes = &buf[20..24];
-                let addr = hex::encode(addr_bytes);
-                let idx = u32::from_le_bytes(idx_bytes.try_into().unwrap()) as u64;
-                map.insert(addr, idx);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(map)
 }
 
 fn simulate_updates(db_size: u64, block: u64) -> Vec<(u64, [u64; 4])> {

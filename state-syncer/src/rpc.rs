@@ -15,6 +15,7 @@ pub struct EthClient {
 struct RpcResponse<T> {
     result: Option<T>,
     error: Option<serde_json::Value>,
+    id: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -32,7 +33,10 @@ impl EthClient {
     pub fn new(url: String) -> Self {
         Self {
             url,
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .build()
+                .unwrap(),
         }
     }
 
@@ -56,6 +60,51 @@ impl EthClient {
         resp.result.ok_or_else(|| eyre::eyre!("RPC returned null result"))
     }
 
+    pub fn call_batch<T: for<'de> Deserialize<'de>>(&self, method: &str, params_list: Vec<serde_json::Value>) -> Result<Vec<Result<T>>> {
+        let mut all_results = Vec::with_capacity(params_list.len());
+        
+        // Chunk size 100 (Erigon default limit)
+        for chunk in params_list.chunks(100) {
+            let batch: Vec<_> = chunk.iter().enumerate().map(|(i, params)| {
+                json!({
+                    "jsonrpc": "2.0",
+                    "method": method,
+                    "params": params,
+                    "id": i
+                })
+            }).collect();
+
+            let response_text = self.client.post(&self.url)
+                .json(&batch)
+                .send()?
+                .text()?;
+
+            // Try to parse as array
+            if let Ok(resps) = serde_json::from_str::<Vec<RpcResponse<T>>>(&response_text) {
+                let mut map = std::collections::HashMap::new();
+                for r in resps {
+                    let id = r.id.as_u64().unwrap() as usize;
+                    let val = if let Some(err) = r.error {
+                        Err(eyre::eyre!("RPC Error: {:?}", err))
+                    } else {
+                        Ok(r.result.unwrap())
+                    };
+                    map.insert(id, val);
+                }
+                
+                for i in 0..batch.len() {
+                    all_results.push(map.remove(&i).ok_or_else(|| eyre::eyre!("Missing response for id {}", i))?);
+                }
+            } else if let Ok(err_obj) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                 return Err(eyre::eyre!("Batch RPC Failed: {:?}", err_obj));
+            } else {
+                return Err(eyre::eyre!("Invalid JSON response: {}", response_text));
+            }
+        }
+        
+        Ok(all_results)
+    }
+
     pub fn block_number(&self) -> Result<u64> {
         let hex: String = self.call("eth_blockNumber", json!([]))?;
         u64::from_str_radix(hex.trim_start_matches("0x"), 16).map_err(|e| e.into())
@@ -74,7 +123,9 @@ impl EthClient {
     }
 }
 
-pub fn fetch_updates_rpc(client: &EthClient, block_number: u64, manager: &crate::update_manager::UpdateManager, address_mapping: &std::collections::HashMap<String, u64>) -> Result<Vec<DBUpdate>> {
+use crate::address_mapping::AddressMapping;
+
+pub fn fetch_updates_rpc(client: &EthClient, block_number: u64, manager: &crate::update_manager::UpdateManager, address_mapping: &AddressMapping) -> Result<Vec<DBUpdate>> {
     // 1. Get block transactions to find touched addresses
     let txs = client.get_block_transactions(block_number)?;
     
@@ -91,81 +142,36 @@ pub fn fetch_updates_rpc(client: &EthClient, block_number: u64, manager: &crate:
     }
 
     let mut updates = Vec::new();
+    let addrs: Vec<String> = addresses.into_iter().collect();
     
-    // 2. For each touched address, check if it's in our DB and if balance changed
-    for addr in addresses {
-        if let Some(&index) = address_mapping.get(&addr) {
-            // Fetch new balance
-            let balance = client.get_balance(&addr, block_number)?;
-            
-            // Get old value from DB
-            let old_value = manager.get_value(index).unwrap_or([0; 4]);
-            
-            // New value: [Nonce (skip), Balance, CodeHash (skip), Padding]
-            // Currently we only update Balance for this PoC
-            // Word 1 is Balance.
-            // Note: `database.bin` layout:
-            // Word 0: Nonce
-            // Word 1: Balance
-            // Word 2: CodeHash
-            // Word 3: Padding
-            
-            // We need to preserve other words.
-            let mut new_value = old_value;
-            
-            // Encode u128 balance into u256 (32 bytes)
-            // Our DB stores u64 words.
-            // Balance is Word 1 (index + 1 in flattened, but `old_value` is [u64; 4])
-            // Wait, Balance is U256. It takes 32 bytes.
-            // In `plinko-extractor` main.rs:
-            //   writer.write_all(&account.balance.to_le_bytes::<32>())?;
-            // This writes 4 u64s? No, it writes 32 bytes.
-            
-            // In `database.bin` (flat u64s):
-            // Entry = 4 * u64 = 32 bytes.
-            // Wait.
-            // In Extractor:
-            // Accounts occupy 4 consecutive ENTRIES? No.
-            // "Accounts: occupy 4 consecutive entries (128 bytes)."
-            // "Word 0: Nonce", "Word 1: Balance", "Word 2: CodeHash", "Word 3: Padding"
-            
-            // In `state-syncer` DB:
-            // `DB_ENTRY_SIZE` = 32 bytes.
-            // `DB_ENTRY_U64_COUNT` = 4.
-            // So `DBEntry` = 32 bytes.
-            
-            // Is an Account ONE entry (32 bytes) or FOUR entries (128 bytes)?
-            // README says: "Accounts: occupy 4 consecutive entries (128 bytes)."
-            
-            // So an Account takes indices `i, i+1, i+2, i+3`.
-            // The `address-mapping.bin` points to the START index.
-            
-            // My `UpdateManager` logic works on `DBUpdate` which has `[u64; 4]`.
-            // This is 32 bytes.
-            // So `DBUpdate` updates ONE entry.
-            
-            // If I want to update Balance, I need to update the Entry at `index + 1`.
-            
-            // Wait, `balance` is u256 (32 bytes).
-            // It occupies ONE entire entry (32 bytes).
-            
-            // So:
-            // Index = Account Base Index
-            // Index + 0 = Nonce (32 bytes)
-            // Index + 1 = Balance (32 bytes)
-            // Index + 2 = CodeHash (32 bytes)
-            // Index + 3 = Padding (32 bytes)
-            
-            // So to update balance, I generate an update for `index + 1`.
+    // Filter for tracked addresses
+    let tracked_addrs: Vec<&String> = addrs.iter()
+        .filter(|a| address_mapping.get(*a).is_some())
+        .collect();
+
+    if tracked_addrs.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Batch fetch balances
+    let hex_num = format!("0x{:x}", block_number);
+    let params: Vec<serde_json::Value> = tracked_addrs.iter()
+        .map(|a| json!([a, hex_num]))
+        .collect();
+
+    let balances: Vec<Result<String>> = client.call_batch("eth_getBalance", params)?;
+
+    for (i, addr) in tracked_addrs.iter().enumerate() {
+        if let Ok(hex_balance) = &balances[i] {
+            let balance = u128::from_str_radix(hex_balance.trim_start_matches("0x"), 16)?;
+            let index = address_mapping.get(*addr).unwrap(); // Safe because we filtered
             
             let balance_idx = index + 1;
             let old_balance_entry = manager.get_value(balance_idx).unwrap_or([0; 4]);
             
-            // Convert new balance (u128) to [u64; 4] (u256 LE)
             let mut new_balance_entry = [0u64; 4];
             new_balance_entry[0] = balance as u64;
             new_balance_entry[1] = (balance >> 64) as u64;
-            // [2] and [3] are 0 because u128 fits in 2 u64s.
             
             if old_balance_entry != new_balance_entry {
                 updates.push(DBUpdate {
