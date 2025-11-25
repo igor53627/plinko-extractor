@@ -289,6 +289,22 @@ fn main() -> Result<()> {
     if let Some(mut writer) = acc_map_writer { writer.flush()?; }
     if let Some(mut writer) = sto_map_writer { writer.flush()?; }
 
+    // --- WRITE METADATA ---
+    if !args.count_only {
+        let meta_path = args.output_dir.join("metadata.json");
+        let json = format!(
+            r#"{{
+  "block": {},
+  "accounts": {},
+  "storage_slots": {},
+  "total_indices": {},
+  "generated_at": "{}"
+}}"#,
+            last_block, count_acc, count_sto, total_indices, now()
+        );
+        std::fs::write(meta_path, json)?;
+    }
+
     println!("[{}] Extraction complete.", now());
 
     Ok(())
