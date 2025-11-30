@@ -22,3 +22,7 @@ alloy-rlp = "0.3"
 # Serialization
 byteorder = "1.5"
 chrono = "0.4"
+
+[workspace]
+members = ["state-syncer"]
+
