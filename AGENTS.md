@@ -39,3 +39,7 @@ cd state-syncer && cargo build --release --bin plinko_hints
 
 - Accounts: 3 words (96 bytes) - nonce, balance, bytecode_hash
 - Storage: 1 word (32 bytes) - value
+
+## Style
+
+- Do NOT use emojis in code, comments, or documentation
