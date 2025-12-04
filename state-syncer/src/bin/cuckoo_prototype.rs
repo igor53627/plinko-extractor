@@ -4,6 +4,7 @@ use std::time::Instant;
 
 const KAPPA: usize = 3; // Number of hash functions (typical for cuckoo hashing)
 const MAX_EVICTIONS: usize = 1000;
+const CUCKOO_OVERHEAD: f64 = 1.5; // Space overhead factor for reliable insertion
 
 #[derive(Clone)]
 struct CuckooTable {
@@ -15,7 +16,7 @@ struct CuckooTable {
 impl CuckooTable {
     fn new(n: usize) -> Self {
         // Cuckoo table needs ~1.5x space for reliable insertion with 3 hash functions
-        let size = (n as f64 * 1.5) as usize;
+        let size = (n as f64 * CUCKOO_OVERHEAD) as usize;
         let mut rng = rand::thread_rng();
         let seeds: [u64; KAPPA] = [rng.gen(), rng.gen(), rng.gen()];
         
@@ -35,7 +36,7 @@ impl CuckooTable {
         (h as usize) % self.size
     }
 
-    fn insert(&mut self, addr: [u8; 20], original_idx: u32) -> bool {
+    fn insert(&mut self, addr: [u8; 20], original_idx: u32) -> Result<(), ([u8; 20], u32)> {
         let mut current = (addr, original_idx);
         let mut rng = rand::thread_rng();
         
@@ -45,7 +46,7 @@ impl CuckooTable {
                 let pos = self.hash(&current.0, h);
                 if self.table[pos].is_none() {
                     self.table[pos] = Some(current);
-                    return true;
+                    return Ok(());
                 }
             }
             // Evict from a random hash position (better than always first)
@@ -55,7 +56,8 @@ impl CuckooTable {
             self.table[pos] = Some(current);
             current = evicted;
         }
-        false // Failed to insert (need to rehash with new seeds)
+        // Return the displaced element so caller can handle it (e.g., trigger rehash)
+        Err(current)
     }
 
     fn lookup(&self, addr: &[u8; 20]) -> Vec<usize> {
@@ -136,7 +138,9 @@ fn main() {
         let mut cuckoo = CuckooTable::new(n);
         let mut failed = 0;
         for (addr, idx) in &entries {
-            if !cuckoo.insert(*addr, *idx) {
+            if let Err(_displaced) = cuckoo.insert(*addr, *idx) {
+                // In production, we would trigger a rehash with new seeds here.
+                // The displaced element is returned so it's not silently lost.
                 failed += 1;
             }
         }
@@ -198,8 +202,9 @@ fn main() {
     println!("\nCuckoo hashing (Construction 1):");
     println!("  Client storage: {} bytes (just {} hash seeds)", cuckoo_client_storage, KAPPA);
     println!("  PIR queries per lookup: {} (one per hash function)", KAPPA);
-    println!("  Server storage: ~{:.2} GB (cuckoo table with 1.3x overhead)", 
-             (mainnet_accounts as f64 * 1.3 * 24.0) / 1_000_000_000.0);
+    println!("  Server storage: ~{:.2} GB (cuckoo table with {:.1}x overhead)", 
+             (mainnet_accounts as f64 * CUCKOO_OVERHEAD * 24.0) / 1_000_000_000.0,
+             CUCKOO_OVERHEAD);
 
     println!("\n=== Trade-off Summary ===");
     println!("  Storage reduction: {:.0}x (from {:.1} GB to {} bytes)", 
