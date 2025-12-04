@@ -137,12 +137,17 @@ fn main() {
         let start = Instant::now();
         let mut cuckoo = CuckooTable::new(n);
         let mut failed = 0;
+        let mut displaced_elements = Vec::new();
         for (addr, idx) in &entries {
-            if let Err(_displaced) = cuckoo.insert(*addr, *idx) {
-                // In production, we would trigger a rehash with new seeds here.
-                // The displaced element is returned so it's not silently lost.
+            if let Err(displaced) = cuckoo.insert(*addr, *idx) {
+                // Collect displaced elements - in production we'd rehash with new seeds
+                displaced_elements.push(displaced);
                 failed += 1;
             }
+        }
+        if !displaced_elements.is_empty() {
+            eprintln!("Warning: {} insertions failed, {} elements displaced (would trigger rehash in production)",
+                     failed, displaced_elements.len());
         }
         let cuckoo_build_time = start.elapsed();
 
@@ -152,7 +157,6 @@ fn main() {
 
         // Storage comparison
         let sorted_storage = sorted.storage_size();
-        let _cuckoo_storage = cuckoo.size * 24; // Each slot: 20 addr + 4 idx (server-side)
         let hash_seeds_storage = KAPPA * 8; // κ seeds of 8 bytes each
         
         println!("\nCLIENT STORAGE:");
