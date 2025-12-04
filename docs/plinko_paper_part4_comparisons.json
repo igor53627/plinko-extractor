@@ -1,0 +1,199 @@
+{
+  "paper_id": "2024-318",
+  "part": 4,
+  "part_title": "Comparison with Prior Work",
+  "comparison_tables": [
+    {
+      "table_id": "figure1",
+      "title": "Query Time and Communication Comparison",
+      "description": "Comparison of amortized query time and communication for single-server offline/online PIR schemes (ignoring polylog factors). Client has r bits of hint storage for database of size n.",
+      "entries": [
+        {
+          "scheme": "CHK",
+          "citation": "[CHK22]",
+          "crypto_assumption": "LWE",
+          "client_storage": "r",
+          "query_time": "r + n/r",
+          "query_communication": "n/r"
+        },
+        {
+          "scheme": "ZLTS",
+          "citation": "[ZLTS23]",
+          "crypto_assumption": "LWE",
+          "client_storage": "r",
+          "query_time": "r + n/r",
+          "query_communication": "polylog(n)"
+        },
+        {
+          "scheme": "LP",
+          "citation": "[LP23a]",
+          "crypto_assumption": "LWE",
+          "client_storage": "r",
+          "query_time": "r + n/r",
+          "query_communication": "polylog(n)"
+        },
+        {
+          "scheme": "Piano",
+          "citation": "[ZPZS24]",
+          "crypto_assumption": "OWF",
+          "client_storage": "r",
+          "query_time": "r + n/r",
+          "query_communication": "n/r"
+        },
+        {
+          "scheme": "RMS",
+          "citation": "[RMS24]",
+          "crypto_assumption": "OWF",
+          "client_storage": "r",
+          "query_time": "r + n/r",
+          "query_communication": "n/r"
+        },
+        {
+          "scheme": "GZS",
+          "citation": "[GZS24]",
+          "crypto_assumption": "OWF",
+          "client_storage": "r",
+          "query_time": "r + n/r",
+          "query_communication": "√(n/r)"
+        },
+        {
+          "scheme": "Lower Bound",
+          "citation": "[Yeo23]",
+          "crypto_assumption": "-",
+          "client_storage": "r",
+          "query_time": "n/r",
+          "query_communication": "-"
+        },
+        {
+          "scheme": "Plinko",
+          "citation": "This work",
+          "crypto_assumption": "OWF",
+          "client_storage": "r",
+          "query_time": "n/r",
+          "query_communication": "n/r",
+          "note": "OPTIMAL"
+        }
+      ]
+    },
+    {
+      "table_id": "figure2",
+      "title": "Update Complexity Comparison",
+      "description": "Comparison of update time and communication for single-server offline/online PIR schemes. Client storage r = √n for simplicity.",
+      "entries": [
+        {
+          "scheme": "CHK",
+          "citation": "[CHK22]",
+          "crypto_assumption": "LWE",
+          "update_time_worst": "√n",
+          "update_time_amortized": "√n",
+          "update_comm_worst": "log n",
+          "update_comm_amortized": "log n"
+        },
+        {
+          "scheme": "ZLTS",
+          "citation": "[ZLTS23]",
+          "crypto_assumption": "LWE",
+          "update_time_worst": "√n",
+          "update_time_amortized": "√n",
+          "update_comm_worst": "log n",
+          "update_comm_amortized": "log n"
+        },
+        {
+          "scheme": "LP",
+          "citation": "[LP23a]",
+          "crypto_assumption": "LWE",
+          "update_time_worst": "√n",
+          "update_time_amortized": "√n",
+          "update_comm_worst": "log n",
+          "update_comm_amortized": "log n"
+        },
+        {
+          "scheme": "Piano",
+          "citation": "[ZPZS24]",
+          "crypto_assumption": "OWF",
+          "update_time_worst": "n",
+          "update_time_amortized": "polylog(n)",
+          "update_comm_worst": "n",
+          "update_comm_amortized": "polylog(n)"
+        },
+        {
+          "scheme": "RMS",
+          "citation": "[RMS24]",
+          "crypto_assumption": "OWF",
+          "update_time_worst": "√n",
+          "update_time_amortized": "√n",
+          "update_comm_worst": "log n",
+          "update_comm_amortized": "log n"
+        },
+        {
+          "scheme": "GZS",
+          "citation": "[GZS24]",
+          "crypto_assumption": "OWF",
+          "update_time_worst": "√n",
+          "update_time_amortized": "√n",
+          "update_comm_worst": "log n",
+          "update_comm_amortized": "log n"
+        },
+        {
+          "scheme": "Plinko",
+          "citation": "This work",
+          "crypto_assumption": "OWF",
+          "update_time_worst": "polylog(n)",
+          "update_time_amortized": "polylog(n)",
+          "update_comm_worst": "log n",
+          "update_comm_amortized": "log n",
+          "note": "OPTIMAL worst-case"
+        }
+      ]
+    },
+    {
+      "table_id": "figure6",
+      "title": "Complete Comparison Table",
+      "description": "Detailed comparison with B-bit entries, λ-bit security, q queries before refresh, blocks of size w",
+      "plinko_variants": [
+        {
+          "name": "Plinko (based on RMS)",
+          "client_storage": "B(λw + q)",
+          "servers": 1,
+          "upload_comm": "n/w",
+          "download_comm": "B",
+          "client_query_time": "λ log n + n/w",
+          "server_query_time": "n/w",
+          "update_worst": "λ log n",
+          "update_amortized": "(λ + q/w) log n"
+        },
+        {
+          "name": "Plinko-Piano",
+          "client_storage": "λB(w + q)",
+          "servers": 1,
+          "upload_comm": "n/w",
+          "download_comm": "Bn/w",
+          "client_query_time": "λ log n + n/w",
+          "server_query_time": "n/w",
+          "update_worst": "λ log n",
+          "update_amortized": "λ(1 + q/w) log n"
+        }
+      ]
+    }
+  ],
+  "key_improvements_over_prior_work": [
+    {
+      "aspect": "Query Time Trade-off",
+      "prior_work": "t = O˜(r + n/r), optimal only for r = O˜(√n)",
+      "plinko": "t = O˜(n/r), optimal for ALL r",
+      "improvement_factor": "O(r) when r > √n"
+    },
+    {
+      "aspect": "Update Time (Worst-case)",
+      "prior_work": "O(n) [Piano] or O(√n) [others]",
+      "plinko": "O˜(1)",
+      "improvement_factor": "Exponential"
+    },
+    {
+      "aspect": "Hint Searching",
+      "prior_work": "O(r) linear scan",
+      "plinko": "O˜(1) via iPRF inversion",
+      "improvement_factor": "O(r)"
+    }
+  ]
+}

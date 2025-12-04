@@ -1,0 +1,235 @@
+{
+  "paper_id": "2024-318",
+  "part": 6,
+  "part_title": "Algorithms and Pseudocode",
+  "algorithms": [
+    {
+      "algorithm_id": "pmns_forward",
+      "name": "S(k, x ∈ [n])",
+      "description": "Forward evaluation of Pseudorandom Multinomial Sampler - finds which bin ball x lands in",
+      "inputs": {
+        "k": "PMNS key/encoding",
+        "x": "Ball index in [n]"
+      },
+      "output": "Bin index y in [m]",
+      "pseudocode": [
+        "start ← 0; count ← n",
+        "low ← 0; high ← m - 1",
+        "node ← (start, count, low, high)",
+        "While low < high:",
+        "  (left, right, s) ← children(k, node)",
+        "  If x < start + s then node ← left",
+        "  Else node ← right",
+        "  (start, count, low, high) ← node",
+        "Return low"
+      ],
+      "complexity": "O(log m)"
+    },
+    {
+      "algorithm_id": "pmns_inverse",
+      "name": "S^{-1}(k, y ∈ [m])",
+      "description": "Inverse evaluation of PMNS - finds all balls in bin y",
+      "inputs": {
+        "k": "PMNS key/encoding",
+        "y": "Bin index in [m]"
+      },
+      "output": "Set of ball indices {start, ..., start + count - 1}",
+      "pseudocode": [
+        "start ← 0; count ← n",
+        "low ← 0; high ← m - 1",
+        "node ← (start, count, low, high)",
+        "While low < high:",
+        "  (left, right, s) ← children(k, node)",
+        "  mid ← ⌊(high + low)/2⌋",
+        "  If y ≤ mid then node ← left",
+        "  Else node ← right",
+        "  (start, count, low, high) ← node",
+        "Return {start, ..., start + count - 1}"
+      ],
+      "complexity": "O(log m)"
+    },
+    {
+      "algorithm_id": "pmns_children",
+      "name": "children(k, node)",
+      "description": "Computes left and right children of a node in PMNS tree",
+      "inputs": {
+        "k": "PMNS key",
+        "node": "(start, count, low, high)"
+      },
+      "output": "(left_child, right_child, split_count)",
+      "pseudocode": [
+        "(start, count, low, high) ← node",
+        "mid ← ⌊(high + low)/2⌋",
+        "p ← (mid - low + 1)/(high - low + 1)",
+        "s ← Binomial(count, p; F(k, node))",
+        "left ← (start, s, low, mid)",
+        "right ← (start + s, count - s, mid + 1, high)",
+        "Return (left, right, s)"
+      ],
+      "note": "Binomial(n, p; r) is derandomized binomial sampling using r as randomness"
+    },
+    {
+      "algorithm_id": "plinko_hintinit",
+      "name": "HintInit^D(1^λ)",
+      "description": "Offline phase - initialize hints by streaming database",
+      "inputs": {
+        "1^λ": "Security parameter",
+        "D": "Database (streamed)"
+      },
+      "output": "Client state st = (K, H, T, Q)",
+      "pseudocode": [
+        "For i = 1, ..., n/w:",
+        "  K[i] ← iF.Gen(1^λ)",
+        "For i = 1, ..., λw:",
+        "  P ← random subset of n/(2w)+1 blocks from n/w",
+        "  H[i] ← (P, 0^B)",
+        "For i = (λw+1), ..., (λw+q):",
+        "  P ← random subset of n/(2w) blocks from n/w",
+        "  T[i] ← (P, 0^B, 0^B)",
+        "For each i ∈ [n]:",
+        "  Stream d ← D[i]",
+        "  (α, β) ← (⌊i/w⌋, i mod w)",
+        "  For each j ∈ iF.F^{-1}(K[α], β):",
+        "    If j < λw:",
+        "      (P, p) ← H[j]",
+        "      If α ∈ P: H[j] ← (P, p ⊕ d)",
+        "    Else:",
+        "      (P, p1, p2) ← T[j]",
+        "      If α ∈ P: T[j] ← (P, p1 ⊕ d, p2)",
+        "      If α ∉ P: T[j] ← (P, p1, p2 ⊕ d)",
+        "Return st = (K, H, T, Q)"
+      ],
+      "complexity": {
+        "time": "O˜(n)",
+        "communication": "O(n)"
+      }
+    },
+    {
+      "algorithm_id": "plinko_query",
+      "name": "Query(i; st)",
+      "description": "Generate query for database index i",
+      "inputs": {
+        "i": "Query index",
+        "st": "Client state (K, H, T, Q)"
+      },
+      "output": "(query q, hint h)",
+      "pseudocode": [
+        "b ← random bit; i' ← i",
+        "While Q[i] ≠ ⊥: i ← random from [n]",
+        "h ← (i, i', b)",
+        "(α, β) ← (⌊i/w⌋, i mod w)",
+        "(P, p, o_0, ..., o_{n/w-1}) ← GetHint(α, β; (K, H))",
+        "P' ← P \\ {α}",
+        "For j ∈ P': o_j ← random from [w]",
+        "If b = 1 then P' ← complement of P'",
+        "q ← (P', (o_j)_{j∈[n/w]})",
+        "Return (q, h)"
+      ]
+    },
+    {
+      "algorithm_id": "plinko_answer",
+      "name": "Answer(q; D)",
+      "description": "Server computes response to query",
+      "inputs": {
+        "q": "Query (P, offsets)",
+        "D": "Database"
+      },
+      "output": "Response (r_0, r_1)",
+      "pseudocode": [
+        "Parse (P, o_0, ..., o_{n/w-1}) ← q",
+        "r_0 ← 0^B; r_1 ← 0^B",
+        "For i ∈ [n/w]:",
+        "  If i ∈ P:",
+        "    r_0 ← r_0 ⊕ D[o_i + i · n/w]",
+        "  If i ∉ P:",
+        "    r_1 ← r_1 ⊕ D[o_i + i · n/w]",
+        "Return (r_0, r_1)"
+      ],
+      "complexity": "O˜(n/r)"
+    },
+    {
+      "algorithm_id": "plinko_recon",
+      "name": "Recon(h, r; st)",
+      "description": "Client reconstructs database entry from response",
+      "inputs": {
+        "h": "Reconstruction hint",
+        "r": "Server response",
+        "st": "Client state"
+      },
+      "output": "Database entry a = D[i]",
+      "pseudocode": [
+        "Parse (i', i, b) ← h and (r_0, r_1) ← r",
+        "(α, β) ← (⌊i/w⌋, i mod w)",
+        "(P, p, o_0, ..., o_{n/w-1}) ← GetHint(α, β; (K, H))",
+        "a ← p ⊕ r_b",
+        "j' ← arg min_j (T[j] ≠ ⊥)",
+        "(P, p1, p2) ← T[j']",
+        "Q[i] ← (a, j')",
+        "If α ∈ P: H[j'] ← (P̄, i, p2 ⊕ a)",
+        "If α ∉ P: H[j'] ← (P, i, p1 ⊕ a)",
+        "T[j'] ← ⊥",
+        "If i' ≠ i then (a, j') ← Q[i']",
+        "Return a"
+      ]
+    },
+    {
+      "algorithm_id": "plinko_updatehint",
+      "name": "UpdateHint(δ; st)",
+      "description": "Client updates hints after database change",
+      "inputs": {
+        "δ": "Update summary (i, u) where u = old_value ⊕ new_value",
+        "st": "Client state"
+      },
+      "output": "Modified client state",
+      "pseudocode": [
+        "Parse (i, u) ← δ",
+        "(α, β) ← (⌊i/w⌋, i mod w)",
+        "For each j ∈ iF.F^{-1}(K[α], β):",
+        "  If j < λw and H[j] ≠ ⊥:",
+        "    (P, p) ← H[j]",
+        "    If α ∈ P: H[j] ← (P, p ⊕ u)",
+        "  If j ≥ λw and H[j] ≠ ⊥:",
+        "    (P, x, p) ← H[j]",
+        "    If α ∈ P: H[j] ← (P, x, p ⊕ u)",
+        "  If j ≥ λw and T[j] ≠ ⊥:",
+        "    (P, p1, p2) ← T[j]",
+        "    If α ∈ P: T[j] ← (P, p1 ⊕ u, p2)",
+        "    If α ∉ P: T[j] ← (P, p1, p2 ⊕ u)",
+        "If Q[i] ≠ ⊥:",
+        "  (a, j) ← Q[i]; (P, i, p) ← H[j]",
+        "  H[j] ← (P, i, p ⊕ u)"
+      ],
+      "complexity": {
+        "time": "O˜(1) worst-case",
+        "key_insight": "iPRF inversion finds all O˜(1) affected hints directly"
+      }
+    },
+    {
+      "algorithm_id": "plinko_gethint",
+      "name": "GetHint(α, β; (K, H))",
+      "description": "Find a hint containing the entry at block α, offset β",
+      "inputs": {
+        "α": "Block index",
+        "β": "Offset within block",
+        "K": "iPRF keys",
+        "H": "Hint table"
+      },
+      "output": "(P, p, offsets) or ⊥",
+      "pseudocode": [
+        "For j ∈ iF.F^{-1}(K[α], β) (in random order):",
+        "  (o_0, ..., o_{n/w-1}) ← (iF.F(K[i], j))_{i∈[n/w]}",
+        "  If j < λw and H[j] ≠ ⊥:",
+        "    Parse (P, p) ← H[j]",
+        "    Return (P, p, o_0, ..., o_{n/w-1})",
+        "  If j ≥ λw and H[j] ≠ ⊥:",
+        "    Parse (P, x, p) ← H[j]",
+        "    (α', β') ← (⌊x/w⌋, x mod w)",
+        "    If α = α' and β ≠ β': Continue",
+        "    o_{α'} ← β'",
+        "    Return (P ∪ {α'}, p, o_0, ..., o_{n/w-1})",
+        "Return ⊥"
+      ],
+      "complexity": "O˜(1) hint search + O˜(n/r) offset enumeration"
+    }
+  ]
+}

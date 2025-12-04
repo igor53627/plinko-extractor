@@ -1,0 +1,66 @@
+{
+  "paper_id": "2024-318",
+  "title": "Plinko: Single-Server PIR with Efficient Updates via Invertible PRFs",
+  "authors": [
+    {
+      "name": "Alexander Hoover",
+      "affiliations": ["Google", "University of Chicago"],
+      "order": 1
+    },
+    {
+      "name": "Sarvar Patel",
+      "affiliations": ["Google"],
+      "order": 2
+    },
+    {
+      "name": "Giuseppe Persiano",
+      "affiliations": ["Università di Salerno", "Google"],
+      "order": 3
+    },
+    {
+      "name": "Kevin Yeo",
+      "affiliations": ["Google", "Columbia University"],
+      "order": 4
+    }
+  ],
+  "abstract": "We study single-server private information retrieval (PIR) where a client wishes to privately retrieve the x-th entry from a database held by a server without revealing the index x. In our work, we focus on PIR with client pre-processing where the client may compute hints during an offline phase. The hints are then leveraged during queries to obtain sub-linear online time. We present Plinko that is the first single-server PIR with client pre-processing that obtains optimal trade-offs between client storage and total (client and server) query time for all parameters. Our scheme uses t = O˜(n/r) query time for any client storage size r. This matches known lower bounds of r · t = Ω(n) up to logarithmic factors for all parameterizations whereas prior works could only match the lower bound when r = O˜(√n). Moreover, Plinko is also the first updateable PIR scheme where an entry can be updated in worst-case O˜(1) time. As our main technical tool, we define the notion of an invertible pseudorandom function (iPRF) that generalizes standard PRFs to be equipped with an efficient inversion algorithm. We present a construction of an iPRF from one-way functions where forward evaluation runs in O˜(1) time and inversion runs in time linear in the inverse set (output) size. Furthermore, our iPRF construction is the first that remains efficient and secure for arbitrary domain and range sizes (including small domains and ranges). In the context of single-server PIR, we show that iPRFs may be used to construct the first hint set representation where finding a hint containing an entry x may be done in O˜(1) time.",
+  "keywords": [
+    "Private Information Retrieval",
+    "PIR",
+    "Invertible PRF",
+    "iPRF",
+    "Client Pre-processing",
+    "Cryptography",
+    "One-way Functions",
+    "Database Privacy"
+  ],
+  "cryptographic_assumptions": ["One-way Functions (OWF)"],
+  "main_contributions": [
+    {
+      "contribution_id": 1,
+      "title": "Invertible PRFs (iPRFs)",
+      "description": "New cryptographic primitive generalizing PRFs with efficient inversion algorithm. First construction secure for arbitrary domain and range sizes."
+    },
+    {
+      "contribution_id": 2,
+      "title": "Optimal Trade-off Curve",
+      "description": "First single-server PIR achieving optimal trade-off between client storage r and query time t = O˜(n/r) for all parameters, matching lower bound r·t = Ω(n)."
+    },
+    {
+      "contribution_id": 3,
+      "title": "Efficient Updates",
+      "description": "First single-server PIR with worst-case O˜(1) time and O(log n) communication for database entry updates."
+    }
+  ],
+  "complexity_results": {
+    "query_time": "O˜(n/r)",
+    "client_storage": "O˜(r)",
+    "update_time_worst_case": "O˜(1)",
+    "update_time_amortized": "polylog(n)",
+    "update_communication_worst_case": "O(log n)",
+    "update_communication_amortized": "O(log n)",
+    "offline_phase_time": "O˜(n)",
+    "offline_phase_communication": "O(n)",
+    "lower_bound": "r · t = Ω(n)"
+  }
+}
