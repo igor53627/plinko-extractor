@@ -40,7 +40,7 @@ impl CuckooTable {
         let mut current = (addr, original_idx);
         let mut rng = rand::thread_rng();
         
-        for _ in 0..MAX_EVICTIONS {
+        for iteration in 0..MAX_EVICTIONS {
             // Try all hash positions
             for h in 0..KAPPA {
                 let pos = self.hash(&current.0, h);
@@ -49,6 +49,10 @@ impl CuckooTable {
                     return Ok(());
                 }
             }
+            // Don't evict on the last iteration - would lose an existing element
+            if iteration == MAX_EVICTIONS - 1 {
+                break;
+            }
             // Evict from a random hash position (better than always first)
             let h = rng.gen_range(0..KAPPA);
             let pos = self.hash(&current.0, h);
@@ -56,7 +60,7 @@ impl CuckooTable {
             self.table[pos] = Some(current);
             current = evicted;
         }
-        // Return the displaced element so caller can handle it (e.g., trigger rehash)
+        // Return the element that couldn't be placed (original input, not an evicted one)
         Err(current)
     }
 
