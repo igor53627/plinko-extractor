@@ -117,8 +117,46 @@ To keep the PIR database fresh without re-downloading the entire ~175GB dataset:
         `NewHint = OldHint XOR (OldVal at Index) XOR (NewVal at Index)`
     *   This operation is $O(1)$ per changed state entry.
 
+## iPRF Implementation
+
+The Plinko PIR scheme relies on an Invertible PRF (iPRF) built from:
+- **Swap-or-Not PRP**: Small-domain pseudorandom permutation (Morris-Rogaway 2013)
+- **PMNS**: Pseudorandom Multinomial Sampler (binary tree ball-into-bins simulation)
+
+### Implementation Parity
+
+We maintain consistency between three sources:
+
+| Component | Paper (2024-318) | Coq Formalization | Rust Implementation |
+|-----------|------------------|-------------------|---------------------|
+| iPRF structure | §4.2: `iF.F(k,x) = S(P(x))` | [Plinko.v](docs/Plinko.v) `iPRF.forward` | [iprf.rs](state-syncer/src/iprf.rs) `Iprf::forward` |
+| iPRF inverse | §4.2: `iF.F⁻¹(k,y) = {P⁻¹(z) : z ∈ S⁻¹(y)}` | `iPRF.inverse` | `Iprf::inverse` |
+| PMNS forward | Algorithm 1 | `PMNS.forward` | `Iprf::trace_ball` |
+| PMNS inverse | Algorithm 2 | `PMNS.inverse` | `Iprf::trace_ball_inverse` |
+| Binomial sampling | §4.3: "derandomized using r as randomness" | `binomial_sample` | `Iprf::binomial_sample` |
+| Swap-or-Not PRP | Referenced: Morris-Rogaway 2013 | `SwapOrNot.prp_forward/inverse` | `SwapOrNot::forward/inverse` |
+
+**Key design decision**: The paper doesn't specify the exact binomial sampling algorithm. We use a simple integer-arithmetic sampler matching the Coq formalization:
+
+```text
+binomial_sample(count, num, denom, prf_output) = (count * num + (prf_output mod (denom + 1))) / denom
+```
+
+This trades a slightly looser security bound for provable correctness and exact Rust-Coq parity.
+
+### Documentation
+
+- **Paper**: [docs/2024-318.pdf](docs/2024-318.pdf) - Original academic paper
+- **Parsed Paper** (machine-readable JSON):
+  - [plinko_paper_index.json](docs/plinko_paper_index.json) - Document structure
+  - [plinko_paper_part2_technical.json](docs/plinko_paper_part2_technical.json) - Technical foundations
+  - [plinko_paper_part3_scheme.json](docs/plinko_paper_part3_scheme.json) - Plinko scheme details
+  - [plinko_paper_part6_algorithms.json](docs/plinko_paper_part6_algorithms.json) - Pseudocode
+- **Coq Formalization**: [docs/Plinko.v](docs/Plinko.v) - Mechanized proofs and reference implementation
+
 ## References
 
 - [Plinko: Single-Server PIR with Efficient Updates](https://vitalik.eth.limo/general/2025/11/25/plinko.html) - Vitalik Buterin's overview
 - [Plinko Paper (ePrint 2024/318)](https://eprint.iacr.org/2024/318.pdf) - Academic paper by Mughees, Shi, and Chen
+- [Morris-Rogaway 2013](https://eprint.iacr.org/2013/560.pdf) - Swap-or-Not small-domain PRP construction
 

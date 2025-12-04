@@ -1,0 +1,628 @@
+{
+  "paper_id": "2024-318",
+  "part": 5,
+  "part_title": "Referenced Papers",
+  "total_references": 56,
+  "references": [
+    {
+      "cite_key": "ABFK16",
+      "title": "XPIR: Private information retrieval for everyone",
+      "authors": ["Carlos Aguilar-Melchor", "Joris Barrier", "Laurent Fousse", "Marc-Olivier Killijian"],
+      "venue": "Proceedings on Privacy Enhancing Technologies",
+      "year": 2016,
+      "volume": "2016(2)",
+      "pages": "155-174",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "ACLS18",
+      "title": "PIR with compressed queries and amortized query processing",
+      "authors": ["Sebastian Angel", "Hao Chen", "Kim Laine", "Srinath T. V. Setty"],
+      "venue": "IEEE Symposium on Security and Privacy",
+      "year": 2018,
+      "pages": "962-979",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "ALP+21",
+      "title": "Communication-computation trade-offs in PIR",
+      "authors": ["Asra Ali", "Tancrède Lepoint", "Sarvar Patel", "Mariana Raykova", "Phillipp Schoppmann", "Karn Seth", "Kevin Yeo"],
+      "venue": "USENIX Security",
+      "year": 2021,
+      "pages": "1811-1828",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "Amb97",
+      "title": "Upper bound on communication complexity of private information retrieval",
+      "authors": ["Andris Ambainis"],
+      "venue": "ICALP",
+      "year": 1997,
+      "pages": "401-407",
+      "category": "Multi-server PIR"
+    },
+    {
+      "cite_key": "AS16",
+      "title": "Unobservable communication over fully untrusted infrastructure",
+      "authors": ["Sebastian Angel", "Srinath Setty"],
+      "venue": "OSDI",
+      "year": 2016,
+      "pages": "551-569",
+      "category": "PIR applications"
+    },
+    {
+      "cite_key": "BGI16",
+      "title": "Function secret sharing: Improvements and extensions",
+      "authors": ["Elette Boyle", "Niv Gilboa", "Yuval Ishai"],
+      "venue": "ACM CCS",
+      "year": 2016,
+      "pages": "1292-1303",
+      "category": "Two-server PIR"
+    },
+    {
+      "cite_key": "BHW19",
+      "title": "Permuted puzzles and cryptographic hardness",
+      "authors": ["Elette Boyle", "Justin Holmgren", "Mor Weiss"],
+      "venue": "TCC",
+      "year": 2019,
+      "pages": "465-493",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "BI01",
+      "title": "Information-theoretic private information retrieval: A unified construction",
+      "authors": ["Amos Beimel", "Yuval Ishai"],
+      "venue": "ICALP",
+      "year": 2001,
+      "pages": "912-926",
+      "category": "Multi-server PIR"
+    },
+    {
+      "cite_key": "BIKM99",
+      "title": "One-way functions are essential for single-server private information retrieval",
+      "authors": ["Amos Beimel", "Yuval Ishai", "Eyal Kushilevitz", "Tal Malkin"],
+      "venue": "ACM STOC",
+      "year": 1999,
+      "pages": "89-98",
+      "category": "PIR lower bounds"
+    },
+    {
+      "cite_key": "BIKR02",
+      "title": "Breaking the O(n^{1/(2k-1)}) barrier for information-theoretic private information retrieval",
+      "authors": ["Amos Beimel", "Yuval Ishai", "Eyal Kushilevitz", "Jean-François Raymond"],
+      "venue": "IEEE FOCS",
+      "year": 2002,
+      "pages": "261-270",
+      "category": "Multi-server PIR"
+    },
+    {
+      "cite_key": "BIM00",
+      "title": "Reducing the servers computation in private information retrieval: PIR with preprocessing",
+      "authors": ["Amos Beimel", "Yuval Ishai", "Tal Malkin"],
+      "venue": "CRYPTO",
+      "year": 2000,
+      "pages": "55-73",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "BIPW17",
+      "title": "Can we access a database both locally and privately?",
+      "authors": ["Elette Boyle", "Yuval Ishai", "Rafael Pass", "Mary Wootters"],
+      "venue": "TCC",
+      "year": 2017,
+      "pages": "662-693",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "BKW17",
+      "title": "Constrained keys for invertible pseudorandom functions",
+      "authors": ["Dan Boneh", "Sam Kim", "David J. Wu"],
+      "venue": "TCC",
+      "year": 2017,
+      "pages": "237-263",
+      "category": "Invertible PRF (prior work)",
+      "note": "Prior definition of invertible PRF for injective functions only"
+    },
+    {
+      "cite_key": "BR06",
+      "title": "The security of triple encryption and a framework for code-based game-playing proofs",
+      "authors": ["Mihir Bellare", "Phillip Rogaway"],
+      "venue": "EUROCRYPT",
+      "year": 2006,
+      "pages": "409-426",
+      "category": "PRF/PRP theory"
+    },
+    {
+      "cite_key": "BS80",
+      "title": "Decomposable searching problems I. Static-to-dynamic transformation",
+      "authors": ["Jon Louis Bentley", "James B Saxe"],
+      "venue": "Journal of Algorithms",
+      "year": 1980,
+      "volume": "1(4)",
+      "pages": "301-358",
+      "category": "Dynamic data structures"
+    },
+    {
+      "cite_key": "CGKS95",
+      "title": "Private information retrieval",
+      "authors": ["Benny Chor", "Oded Goldreich", "Eyal Kushilevitz", "Madhu Sudan"],
+      "venue": "IEEE FOCS",
+      "year": 1995,
+      "pages": "41-50",
+      "category": "PIR foundations",
+      "note": "Original PIR paper"
+    },
+    {
+      "cite_key": "CHK22",
+      "title": "Single-server private information retrieval with sublinear amortized time",
+      "authors": ["Henry Corrigan-Gibbs", "Alexandra Henzinger", "Dmitry Kogan"],
+      "venue": "EUROCRYPT",
+      "year": 2022,
+      "pages": "3-33",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "CHR17",
+      "title": "Towards doubly efficient private information retrieval",
+      "authors": ["Ran Canetti", "Justin Holmgren", "Silas Richelson"],
+      "venue": "TCC",
+      "year": 2017,
+      "pages": "694-726",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "CK20",
+      "title": "Private information retrieval with sublinear online time",
+      "authors": ["Henry Corrigan-Gibbs", "Dmitry Kogan"],
+      "venue": "EUROCRYPT",
+      "year": 2020,
+      "pages": "44-75",
+      "category": "PIR with preprocessing",
+      "note": "Breakthrough work for sub-linear query time"
+    },
+    {
+      "cite_key": "CMS99",
+      "title": "Computationally private information retrieval with polylogarithmic communication",
+      "authors": ["Christian Cachin", "Silvio Micali", "Markus Stadler"],
+      "venue": "EUROCRYPT",
+      "year": 1999,
+      "pages": "402-414",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "CSM+20",
+      "title": "Talek: Private group messaging with hidden access patterns",
+      "authors": ["Raymond Cheng", "William Scott", "Elisaweta Masserova", "Irene Zhang", "Vipul Goyal", "Thomas Anderson", "Arvind Krishnamurthy", "Bryan Parno"],
+      "venue": "Annual Computer Security Applications Conference",
+      "year": 2020,
+      "pages": "84-99",
+      "category": "PIR applications"
+    },
+    {
+      "cite_key": "Dev86",
+      "title": "Non-uniform random variate generation",
+      "authors": ["Luc Devroye"],
+      "year": 1986,
+      "category": "Algorithms"
+    },
+    {
+      "cite_key": "DG15",
+      "title": "2-server PIR with sub-polynomial communication",
+      "authors": ["Zeev Dvir", "Sivakanth Gopi"],
+      "venue": "ACM STOC",
+      "year": 2015,
+      "pages": "577-584",
+      "category": "Multi-server PIR"
+    },
+    {
+      "cite_key": "Din20",
+      "title": "On the streaming indistinguishability of a random permutation and a random function",
+      "authors": ["Itai Dinur"],
+      "venue": "EUROCRYPT",
+      "year": 2020,
+      "pages": "433-460",
+      "category": "PRF/PRP theory"
+    },
+    {
+      "cite_key": "DMO00",
+      "title": "Single database private information retrieval implies oblivious transfer",
+      "authors": ["Giovanni Di Crescenzo", "Tal Malkin", "Rafail Ostrovsky"],
+      "venue": "EUROCRYPT",
+      "year": 2000,
+      "pages": "122-138",
+      "category": "PIR lower bounds"
+    },
+    {
+      "cite_key": "FLLP24",
+      "title": "ThorPIR: Single server PIR via homomorphic thorp shuffles",
+      "authors": ["Ben Fisch", "Arthur Lazzaretti", "Zeyu Liu", "Charalampos Papamanthou"],
+      "venue": "Cryptology ePrint Archive",
+      "year": 2024,
+      "report": "2024/482",
+      "category": "PIR with preprocessing",
+      "note": "Concurrent work achieving efficient updates"
+    },
+    {
+      "cite_key": "GCM+16",
+      "title": "Scalable and private media consumption with popcorn",
+      "authors": ["Trinabh Gupta", "Natacha Crooks", "Whitney Mulhern", "Srinath Setty", "Lorenzo Alvisi", "Michael Walfish"],
+      "venue": "NSDI",
+      "year": 2016,
+      "pages": "91-107",
+      "category": "PIR applications"
+    },
+    {
+      "cite_key": "GG15",
+      "title": "Distinguishing a truncated random permutation from a random function",
+      "authors": ["Shoni Gilboa", "Shay Gueron"],
+      "venue": "Cryptology ePrint Archive",
+      "year": 2015,
+      "report": "2015/773",
+      "category": "Truncated PRP"
+    },
+    {
+      "cite_key": "GG21",
+      "title": "The advantage of truncated permutations",
+      "authors": ["Shoni Gilboa", "Shay Gueron"],
+      "venue": "Discrete Applied Mathematics",
+      "year": 2021,
+      "volume": "294",
+      "pages": "214-223",
+      "category": "Truncated PRP"
+    },
+    {
+      "cite_key": "GGM84",
+      "title": "How to construct random functions",
+      "authors": ["Oded Goldreich", "Shafi Goldwasser", "Silvio Micali"],
+      "venue": "IEEE FOCS",
+      "year": 1984,
+      "pages": "464-479",
+      "category": "PRF foundations",
+      "note": "Original PRF paper"
+    },
+    {
+      "cite_key": "GGM18",
+      "title": "How many queries are needed to distinguish a truncated random permutation from a random function?",
+      "authors": ["Shoni Gilboa", "Shay Gueron", "Ben Morris"],
+      "venue": "Journal of Cryptology",
+      "year": 2018,
+      "volume": "31(1)",
+      "pages": "162-171",
+      "category": "Truncated PRP"
+    },
+    {
+      "cite_key": "GH19",
+      "title": "Compressible FHE with applications to PIR",
+      "authors": ["Craig Gentry", "Shai Halevi"],
+      "venue": "TCC",
+      "year": 2019,
+      "pages": "438-464",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "GLM16",
+      "title": "A protocol for privately reporting ad impressions at scale",
+      "authors": ["Matthew Green", "Watson Ladd", "Ian Miers"],
+      "venue": "ACM CCS",
+      "year": 2016,
+      "pages": "1591-1601",
+      "category": "PIR applications"
+    },
+    {
+      "cite_key": "GPV08",
+      "title": "Trapdoors for hard lattices and new cryptographic constructions",
+      "authors": ["Craig Gentry", "Chris Peikert", "Vinod Vaikuntanathan"],
+      "venue": "ACM STOC",
+      "year": 2008,
+      "pages": "197-206",
+      "category": "Preimage sampleable functions"
+    },
+    {
+      "cite_key": "GR05",
+      "title": "Single-database private information retrieval with constant communication rate",
+      "authors": ["Craig Gentry", "Zulfikar Ramzan"],
+      "venue": "ICALP",
+      "year": 2005,
+      "pages": "803-815",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "GZS24",
+      "title": "Efficient pre-processing PIR without public-key cryptography",
+      "authors": ["Ashrujit Ghoshal", "Mingxun Zhou", "Elaine Shi"],
+      "venue": "EUROCRYPT",
+      "year": 2024,
+      "pages": "210-240",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "HHCG+23",
+      "title": "One server for the price of two: Simple and fast single-server private information retrieval",
+      "authors": ["Alexandra Henzinger", "Matthew M Hong", "Henry Corrigan-Gibbs", "Sarah Meiklejohn", "Vinod Vaikuntanathan"],
+      "venue": "USENIX Security",
+      "year": 2023,
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "HWKS98",
+      "title": "Building PRFs from PRPs",
+      "authors": ["Chris Hall", "David Wagner", "John Kelsey", "Bruce Schneier"],
+      "venue": "CRYPTO",
+      "year": 1998,
+      "pages": "370-389",
+      "category": "PRF/PRP theory"
+    },
+    {
+      "cite_key": "IR89",
+      "title": "Limits on the provable consequences of one-way permutations",
+      "authors": ["Russell Impagliazzo", "Steven Rudich"],
+      "venue": "ACM STOC",
+      "year": 1989,
+      "pages": "44-61",
+      "category": "Cryptographic lower bounds"
+    },
+    {
+      "cite_key": "KC21",
+      "title": "Private blocklist lookups with checklist",
+      "authors": ["Dmitry Kogan", "Henry Corrigan-Gibbs"],
+      "venue": "USENIX Security",
+      "year": 2021,
+      "pages": "875-892",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "KO97",
+      "title": "Replication is NOT needed: SINGLE database, computationally-private information retrieval",
+      "authors": ["Eyal Kushilevitz", "Rafail Ostrovsky"],
+      "venue": "IEEE FOCS",
+      "year": 1997,
+      "pages": "364-373",
+      "category": "PIR foundations",
+      "note": "First single-server PIR"
+    },
+    {
+      "cite_key": "KO00",
+      "title": "One-way trapdoor permutations are sufficient for non-trivial single-server private information retrieval",
+      "authors": ["Eyal Kushilevitz", "Rafail Ostrovsky"],
+      "venue": "EUROCRYPT",
+      "year": 2000,
+      "pages": "104-121",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "LMW23",
+      "title": "Doubly efficient private information retrieval and fully homomorphic RAM computation from ring LWE",
+      "authors": ["Wei-Kai Lin", "Ethan Mook", "Daniel Wichs"],
+      "venue": "ACM STOC",
+      "year": 2023,
+      "pages": "595-608",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "LP23a",
+      "title": "Near-optimal private information retrieval with preprocessing",
+      "authors": ["Arthur Lazzaretti", "Charalampos Papamanthou"],
+      "venue": "TCC",
+      "year": 2023,
+      "pages": "406-435",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "LP23b",
+      "title": "TreePIR: Sublinear-time and polylog-bandwidth private information retrieval from DDH",
+      "authors": ["Arthur Lazzaretti", "Charalampos Papamanthou"],
+      "venue": "CRYPTO",
+      "year": 2023,
+      "pages": "284-314",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "LP24",
+      "title": "Single pass client-preprocessing private information retrieval",
+      "authors": ["Arthur Lazzaretti", "Charalampos Papamanthou"],
+      "venue": "USENIX Security",
+      "year": 2024,
+      "category": "PIR with preprocessing",
+      "note": "Concurrent work achieving efficient updates (2-server)"
+    },
+    {
+      "cite_key": "LR88",
+      "title": "How to construct pseudorandom permutations from pseudorandom functions",
+      "authors": ["Michael Luby", "Charles Rackoff"],
+      "venue": "SIAM Journal on Computing",
+      "year": 1988,
+      "volume": "17(2)",
+      "category": "PRP foundations"
+    },
+    {
+      "cite_key": "MCR21",
+      "title": "OnionPIR: Response efficient single-server PIR",
+      "authors": ["Muhammad Haris Mughees", "Hao Chen", "Ling Ren"],
+      "venue": "ACM CCS",
+      "year": 2021,
+      "pages": "2292-2306",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "Men19",
+      "title": "Linking Stam's bounds with generalized truncation",
+      "authors": ["Bart Mennink"],
+      "venue": "CT-RSA",
+      "year": 2019,
+      "pages": "313-329",
+      "category": "Truncated PRP"
+    },
+    {
+      "cite_key": "MK22",
+      "title": "Constant-weight PIR: Single-round keyword PIR via constant-weight equality operators",
+      "authors": ["Rasoul Akhavan Mahdavi", "Florian Kerschbaum"],
+      "venue": "USENIX Security",
+      "year": 2022,
+      "pages": "1723-1740",
+      "category": "Keyword PIR"
+    },
+    {
+      "cite_key": "MOT+11",
+      "title": "PIR-tor: Scalable anonymous communication using private information retrieval",
+      "authors": ["Prateek Mittal", "Femi G. Olumofin", "Carmela Troncoso", "Nikita Borisov", "Ian Goldberg"],
+      "venue": "USENIX Security",
+      "year": 2011,
+      "category": "PIR applications"
+    },
+    {
+      "cite_key": "MR14",
+      "title": "Sometimes-recurse shuffle - almost-random permutations in logarithmic expected time",
+      "authors": ["Ben Morris", "Phillip Rogaway"],
+      "venue": "EUROCRYPT",
+      "year": 2014,
+      "pages": "311-326",
+      "category": "Small-domain PRP"
+    },
+    {
+      "cite_key": "MW22",
+      "title": "SPIRAL: Fast, high-rate single-server PIR via FHE composition",
+      "authors": ["Samir Jordan Menon", "David J. Wu"],
+      "venue": "IEEE Symposium on Security and Privacy",
+      "year": 2022,
+      "pages": "930-947",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "MZRA22",
+      "title": "Incremental offline/online PIR",
+      "authors": ["Yiping Ma", "Ke Zhong", "Tal Rabin", "Sebastian Angel"],
+      "venue": "USENIX Security",
+      "year": 2022,
+      "pages": "1741-1758",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "OS07",
+      "title": "A survey of single-database private information retrieval: Techniques and applications",
+      "authors": ["Rafail Ostrovsky", "William E. Skeith III"],
+      "venue": "PKC",
+      "year": 2007,
+      "pages": "393-411",
+      "category": "PIR survey"
+    },
+    {
+      "cite_key": "PPY18",
+      "title": "Private stateful information retrieval",
+      "authors": ["Sarvar Patel", "Giuseppe Persiano", "Kevin Yeo"],
+      "venue": "ACM CCS",
+      "year": 2018,
+      "pages": "1002-1019",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "PSY23",
+      "title": "Don't be dense: Efficient keyword PIR for sparse databases",
+      "authors": ["Sarvar Patel", "Joon Young Seo", "Kevin Yeo"],
+      "venue": "USENIX Security",
+      "year": 2023,
+      "pages": "3853-3870",
+      "category": "Keyword PIR"
+    },
+    {
+      "cite_key": "PT20",
+      "title": "SHECS-PIR: Somewhat homomorphic encryption-based compact and scalable private information retrieval",
+      "authors": ["Jeongeun Park", "Mehdi Tibouchi"],
+      "venue": "ESORICS",
+      "year": 2020,
+      "pages": "86-106",
+      "category": "PIR without preprocessing"
+    },
+    {
+      "cite_key": "PY22",
+      "title": "Limits of preprocessing for single-server PIR",
+      "authors": ["Giuseppe Persiano", "Kevin Yeo"],
+      "venue": "ACM-SIAM SODA",
+      "year": 2022,
+      "pages": "2522-2548",
+      "category": "PIR lower bounds"
+    },
+    {
+      "cite_key": "RMS24",
+      "title": "Simple and practical amortized sublinear private information retrieval using dummy subsets",
+      "authors": ["Ling Ren", "Muhammad Haris Mughees", "I Sun"],
+      "venue": "ACM CCS",
+      "year": 2024,
+      "pages": "1420-1433",
+      "category": "PIR with preprocessing",
+      "note": "Base scheme that Plinko modifies"
+    },
+    {
+      "cite_key": "SACM21",
+      "title": "Puncturable pseudorandom sets and private information retrieval with near-optimal online bandwidth and time",
+      "authors": ["Elaine Shi", "Waqar Aqeel", "Balakrishnan Chandrasekaran", "Bruce M. Maggs"],
+      "venue": "CRYPTO",
+      "year": 2021,
+      "pages": "641-669",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "Sta78",
+      "title": "Distance between sampling with and without replacement",
+      "authors": ["Adriaan Johannes Stam"],
+      "venue": "Statistica Neerlandica",
+      "year": 1978,
+      "volume": "32(2)",
+      "pages": "81-91",
+      "category": "Statistics"
+    },
+    {
+      "cite_key": "Yek08",
+      "title": "Towards 3-query locally decodable codes of subexponential length",
+      "authors": ["Sergey Yekhanin"],
+      "venue": "Journal of the ACM",
+      "year": 2008,
+      "volume": "55(1)",
+      "pages": "1-16",
+      "category": "Multi-server PIR"
+    },
+    {
+      "cite_key": "Yeo23",
+      "title": "Lower bounds for (batch) PIR with private preprocessing",
+      "authors": ["Kevin Yeo"],
+      "venue": "EUROCRYPT",
+      "year": 2023,
+      "pages": "518-550",
+      "category": "PIR lower bounds",
+      "note": "Establishes r·t = Ω(n) lower bound"
+    },
+    {
+      "cite_key": "ZLTS23",
+      "title": "Optimal single-server private information retrieval",
+      "authors": ["Mingxun Zhou", "Wei-Kai Lin", "Yiannis Tselekounis", "Elaine Shi"],
+      "venue": "EUROCRYPT",
+      "year": 2023,
+      "pages": "395-425",
+      "category": "PIR with preprocessing"
+    },
+    {
+      "cite_key": "ZPZS24",
+      "title": "Piano: Extremely simple, single-server PIR with sublinear server computation",
+      "authors": ["Mingxun Zhou", "Andrew Park", "Wenting Zheng", "Elaine Shi"],
+      "venue": "IEEE Symposium on Security and Privacy",
+      "year": 2024,
+      "pages": "4296-4314",
+      "category": "PIR with preprocessing",
+      "note": "Alternative base scheme for Plinko-Piano variant"
+    }
+  ],
+  "reference_categories": {
+    "PIR foundations": ["CGKS95", "KO97"],
+    "PIR with preprocessing": ["BIM00", "BIPW17", "BHW19", "CHK22", "CHR17", "CK20", "FLLP24", "GZS24", "KC21", "LMW23", "LP23a", "LP23b", "LP24", "MZRA22", "PPY18", "RMS24", "SACM21", "ZLTS23", "ZPZS24"],
+    "PIR without preprocessing": ["ABFK16", "ACLS18", "ALP+21", "CMS99", "GH19", "GR05", "HHCG+23", "KO00", "MCR21", "MW22", "PT20"],
+    "Multi-server PIR": ["Amb97", "BI01", "BIKR02", "DG15", "Yek08"],
+    "Two-server PIR": ["BGI16"],
+    "PIR lower bounds": ["BIKM99", "DMO00", "PY22", "Yeo23"],
+    "PIR applications": ["AS16", "CSM+20", "GCM+16", "GLM16", "MOT+11"],
+    "Keyword PIR": ["MK22", "PSY23"],
+    "PRF/PRP theory": ["BR06", "Din20", "GGM84", "HWKS98", "LR88"],
+    "Truncated PRP": ["GG15", "GG21", "GGM18", "Men19"],
+    "Small-domain PRP": ["MR14"],
+    "Invertible PRF prior work": ["BKW17"],
+    "Other cryptographic primitives": ["GPV08", "IR89"]
+  }
+}

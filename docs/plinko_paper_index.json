@@ -1,0 +1,97 @@
+{
+  "paper_id": "2024-318",
+  "title": "Plinko: Single-Server PIR with Efficient Updates via Invertible PRFs",
+  "version": "1.0",
+  "created_for": "Agent consumption",
+  "total_parts": 6,
+  "parts": [
+    {
+      "part_number": 1,
+      "filename": "plinko_paper_part1_metadata.json",
+      "title": "Metadata and Overview",
+      "contents": [
+        "Paper identification",
+        "Author information",
+        "Abstract",
+        "Keywords",
+        "Main contributions summary",
+        "Complexity results summary"
+      ]
+    },
+    {
+      "part_number": 2,
+      "filename": "plinko_paper_part2_technical.json",
+      "title": "Technical Overview and Invertible PRFs",
+      "contents": [
+        "Technical overview of PIR framework",
+        "Hint searching problem",
+        "iPRF formal definition",
+        "PMNS definition",
+        "iPRF construction from PRP + PMNS",
+        "PMNS construction (binary tree sampling)"
+      ]
+    },
+    {
+      "part_number": 3,
+      "filename": "plinko_paper_part3_scheme.json",
+      "title": "Plinko PIR Scheme",
+      "contents": [
+        "PIR algorithm definitions",
+        "Security games",
+        "Plinko construction details",
+        "Data structures (hints, backup hints)",
+        "Offline, query, and update phases",
+        "Efficiency and security analysis"
+      ]
+    },
+    {
+      "part_number": 4,
+      "filename": "plinko_paper_part4_comparisons.json",
+      "title": "Comparison with Prior Work",
+      "contents": [
+        "Query time comparison table",
+        "Update complexity comparison table",
+        "Complete comparison with all parameters",
+        "Key improvements over prior work"
+      ]
+    },
+    {
+      "part_number": 5,
+      "filename": "plinko_paper_part5_references.json",
+      "title": "Referenced Papers",
+      "contents": [
+        "All 56 cited papers with metadata",
+        "Categorized by topic",
+        "Special notes for key references"
+      ]
+    },
+    {
+      "part_number": 6,
+      "filename": "plinko_paper_part6_algorithms.json",
+      "title": "Algorithms and Pseudocode",
+      "contents": [
+        "PMNS forward/inverse algorithms",
+        "Plinko HintInit",
+        "Plinko Query/Answer/Recon",
+        "Plinko UpdateHint",
+        "GetHint helper function"
+      ]
+    }
+  ],
+  "key_takeaways": {
+    "problem": "Single-server PIR with client preprocessing - prior schemes had suboptimal query time O˜(r + n/r) for large client storage r",
+    "solution": "Invertible PRFs enable O˜(1) hint searching, achieving optimal O˜(n/r) query time for all r",
+    "innovation": "New iPRF primitive built from one-way functions only, secure for arbitrary domain/range sizes",
+    "practical_impact": [
+      "First optimal trade-off curve for all client storage sizes",
+      "First worst-case O˜(1) update time for PIR with preprocessing",
+      "Simple modification to existing schemes (RMS, Piano)"
+    ]
+  },
+  "agent_usage_notes": {
+    "for_implementation": "Use Part 6 (algorithms) with Part 3 (scheme details)",
+    "for_understanding_theory": "Use Part 2 (technical) with Part 1 (overview)",
+    "for_literature_review": "Use Part 5 (references) with Part 4 (comparisons)",
+    "for_quick_summary": "Use Part 1 (metadata) only"
+  }
+}

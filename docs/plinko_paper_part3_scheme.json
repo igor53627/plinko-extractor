@@ -1,0 +1,147 @@
+{
+  "paper_id": "2024-318",
+  "part": 3,
+  "part_title": "Single-Server PIR Scheme (Plinko)",
+  "sections": [
+    {
+      "section_id": "5.1",
+      "title": "PIR Definitions",
+      "algorithms": [
+        {
+          "name": "HintInit^D(1^λ)",
+          "description": "Offline phase - client streams database to compute hints",
+          "output": "Client state st",
+          "communication": "O(n) - streaming entire database"
+        },
+        {
+          "name": "Query(i; st)",
+          "description": "Generate query for index i",
+          "output": "(query q, reconstruction hint h)"
+        },
+        {
+          "name": "Answer(q; D)",
+          "description": "Server computes response to query",
+          "output": "Response r"
+        },
+        {
+          "name": "Recon(h, r; st)",
+          "description": "Client reconstructs answer from response",
+          "output": "Database entry a = D[i]"
+        },
+        {
+          "name": "UpdateDB(i, d; D)",
+          "description": "Server updates database entry",
+          "output": "Update summary δ"
+        },
+        {
+          "name": "UpdateHint(δ; st)",
+          "description": "Client updates hints based on database change",
+          "output": "Modified client state"
+        }
+      ],
+      "security_games": {
+        "correctness": "G_cor: adversary cannot cause incorrect reconstruction after ≤Q queries",
+        "privacy": "G_pir: adversary cannot distinguish queries for i_0 vs i_1"
+      }
+    },
+    {
+      "section_id": "5.2",
+      "title": "Plinko Construction",
+      "parameters": {
+        "n": "database size (bits)",
+        "w": "block size",
+        "q": "queries before refresh",
+        "c": "n/w (number of blocks)",
+        "λ": "security parameter"
+      },
+      "data_structures": {
+        "H": "Regular hint table - λw + q slots",
+        "T": "Backup hint table - λw + q slots",
+        "K": "iPRF keys - one per block",
+        "Q": "Query cache - stores previous query results"
+      },
+      "hint_types": {
+        "regular_hint": {
+          "format": "(P_j, p_j)",
+          "P_j": "subset of c/2 + 1 blocks",
+          "p_j": "parity of chosen database entries",
+          "offset_selection": "For block α ∈ P_j: offset = iF.F(k_α, j)"
+        },
+        "backup_hint": {
+          "format": "(B_j, ℓ_j, r_j)",
+          "B_j": "subset of c/2 blocks",
+          "ℓ_j": "parity of entries in B_j at iPRF-chosen offsets",
+          "r_j": "parity of entries outside B_j at iPRF-chosen offsets"
+        },
+        "promoted_backup": {
+          "format": "(B_j, η, x, p_j)",
+          "description": "Backup hint promoted after query, includes query index x"
+        }
+      },
+      "offline_phase": {
+        "steps": [
+          "Generate iPRF key for each block",
+          "Initialize λw regular hints with random block subsets",
+          "Initialize q backup hints with random block subsets",
+          "Stream database: for each entry, update relevant hint parities using iPRF inversion"
+        ],
+        "time": "O˜(n)",
+        "communication": "O(n)"
+      },
+      "query_phase": {
+        "client_steps": [
+          "Parse x = αw + β (block α, offset β)",
+          "Find hint via iF.F^{-1}(k_α, β) - returns all hints containing x",
+          "Select unused hint H[j] = (P_j, p_j) where α ∈ P_j",
+          "Construct S = entries in P_j \\ {α} at iPRF offsets",
+          "Construct Ŝ = random entries from blocks not in P_j plus α",
+          "Send (S, Ŝ) in random order to server"
+        ],
+        "server_steps": [
+          "Compute parity s = ⊕_{i∈S} D[i]",
+          "Compute parity ŝ = ⊕_{i∈Ŝ} D[i]",
+          "Return (s, ŝ)"
+        ],
+        "reconstruction": "D[x] = p_j ⊕ s (using correct parity from response)",
+        "hint_replacement": "Promote next backup hint T[λw+k] to regular hint H[λw+k]"
+      },
+      "update_phase": {
+        "server_action": "Send (x, D[x] ⊕ d) to client",
+        "client_action": "Use iF.F^{-1}(k_α, β) to find all hints containing x, XOR update value into their parities",
+        "affected_structures": [
+          "Regular hints H",
+          "Backup hints T",
+          "Promoted hints",
+          "Query cache Q"
+        ],
+        "time": "O˜(1) worst-case",
+        "communication": "O(log n)"
+      }
+    },
+    {
+      "section_id": "5.3",
+      "title": "Efficiency Analysis",
+      "query_time": {
+        "hint_search": "O˜(1) via iPRF inversion",
+        "offset_enumeration": "O˜(n/r) for n/w offsets",
+        "server_computation": "O˜(n/r)",
+        "total": "O˜(n/r)"
+      },
+      "space": {
+        "hints": "O˜(r) = O(B(λw + q)) for B-bit entries",
+        "iprf_keys": "O(n/w) keys, O˜(1) each"
+      },
+      "hints_per_entry": {
+        "expected": "O˜(1)",
+        "proof": "Each hint includes entry with probability O(1/w), λw+q hints total, Chernoff bound gives O˜(1) w.h.p."
+      }
+    },
+    {
+      "section_id": "5.4",
+      "title": "Security Analysis",
+      "correctness": "Follows from [RMS24] - iPRF substitution doesn't change hint distribution",
+      "privacy": "Server sees random block partition and random offsets, independent of query index x",
+      "offline_necessity": "Sub-linear query communication + sub-linear offline communication implies OT [DMO00], which requires public-key. Hence O(n) offline communication is optimal for OWF-only schemes."
+    }
+  ]
+}

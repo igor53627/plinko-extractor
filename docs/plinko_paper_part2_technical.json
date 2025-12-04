@@ -1,0 +1,105 @@
+{
+  "paper_id": "2024-318",
+  "part": 2,
+  "part_title": "Technical Overview and Invertible PRFs",
+  "sections": [
+    {
+      "section_id": "2",
+      "title": "Technical Overview",
+      "subsections": [
+        {
+          "subsection_id": "2.1",
+          "title": "Simple Offline-Online PIR Framework",
+          "content": "The framework partitions database into n/w blocks of size w. Client stores parities of random subsets during offline phase. Each hint consists of n/w ordered offsets representing a random set. For query at x, client finds hint containing x, removes corresponding offset, server computes n/r parities, client recovers D[x] using stored parity.",
+          "key_concepts": [
+            "Block partitioning",
+            "Hint sets as parities",
+            "PRF-based offset generation"
+          ]
+        },
+        {
+          "subsection_id": "2.2",
+          "title": "Hint Searching Problem",
+          "content": "Prior schemes require O˜(r) linear pass through hints to find one containing query index x. This is the main bottleneck preventing optimal trade-offs for large client storage sizes.",
+          "key_insight": "Using iPRFs enables O˜(1) hint searching via efficient inversion"
+        },
+        {
+          "subsection_id": "2.3",
+          "title": "Invertible PRFs Solution",
+          "content": "iPRFs allow O˜(1) forward evaluation and inversion linear in pre-image size. By using iPRFs instead of PRFs for offset generation, client can run iF.F^{-1}(k_α, β) to find all hints containing index x in O˜(1) time.",
+          "algorithm_sketch": "For each block α, use iPRF key k_α. To find hints containing x = αw + β: compute iF.F^{-1}(k_α, β) which returns all hint indices where offset in block α equals β."
+        }
+      ]
+    },
+    {
+      "section_id": "4",
+      "title": "Invertible PRFs",
+      "subsections": [
+        {
+          "subsection_id": "4.0",
+          "title": "Definition",
+          "formal_definition": {
+            "name": "Invertible Pseudorandom Function (iPRF)",
+            "components": [
+              "Gen: {0,1}* → K (key generation)",
+              "F: K × D → R (forward evaluation)",
+              "F^{-1}: K × R → 2^D (inversion)"
+            ],
+            "correctness": "For all y ∈ R: Pr[F^{-1}_k(y) ≠ {x ∈ D | F_k(x) = y}] ≤ negl(λ)",
+            "security": "Advantage distinguishing (F_k, F^{-1}_k) from random function and its inverse is negligible"
+          },
+          "distinction_from_priors": [
+            "Unlike PRPs: iPRFs are not bijections, allow collisions",
+            "Unlike truncated PRPs: iPRFs remain indistinguishable for small domains",
+            "Unlike prior invertible PRFs [BKW17]: handles non-injective functions"
+          ]
+        },
+        {
+          "subsection_id": "4.1",
+          "title": "Pseudorandom Multinomial Samplers (PMNS)",
+          "definition": "Efficiently encodes multinomial distribution MN(n,m) - distribution of bin loads when throwing n balls into m bins",
+          "components": [
+            "Gen: samples encoding k",
+            "S(k, x): returns bin assignment for ball x",
+            "S^{-1}(k, y): returns all balls in bin y"
+          ],
+          "key_property": "Encoding size is polylog(n,m) instead of O(m log n)"
+        },
+        {
+          "subsection_id": "4.2",
+          "title": "iPRF Construction",
+          "construction": {
+            "components": ["PRP P over [n]", "PMNS (Gen, S, S^{-1}) from [n] to [m]"],
+            "forward": "iF.F((k1, k2), x) = S(k2, P(k1, x))",
+            "inverse": "iF.F^{-1}((k1, k2), y) = {P^{-1}(k1, x) : x ∈ S^{-1}(k2, y)}",
+            "intuition": "PMNS simulates random function pre-image distribution, PRP adds pseudorandomness"
+          },
+          "efficiency": {
+            "forward": "O˜(1) - single PMNS call, single PRP call",
+            "inverse": "O˜(|output|) - one PMNS inverse, PRP inverse per element"
+          },
+          "assumption": "One-way functions only"
+        },
+        {
+          "subsection_id": "4.3",
+          "title": "PMNS Construction",
+          "algorithm": {
+            "idea": "Binary tree sampling using binomial distributions",
+            "process": [
+              "Root: sample L ∼ Binomial(n, 1/2) balls go left, n-L go right",
+              "Recurse: each node samples binomial split of inherited balls",
+              "Leaves: represent final bin assignments"
+            ],
+            "forward_S": "Follow ball x down tree tracking which subtree it belongs to",
+            "inverse_S": "Follow path to bin y, return range [start, start+count-1] of balls in that bin"
+          },
+          "complexity": {
+            "forward": "O(log m) calls to PRF/binomial sampler",
+            "inverse": "O(log m) calls to PRF/binomial sampler"
+          },
+          "name_origin": "Plinko game - ball falls on pegs going left/right at each level"
+        }
+      ]
+    }
+  ]
+}

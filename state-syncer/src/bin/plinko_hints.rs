@@ -67,6 +67,11 @@ struct Args {
     /// Fastest on CPUs with AES-NI support.
     #[arg(long, default_value = "false")]
     aes: bool,
+
+    /// Use AES standard mode: one AES-CTR PRF per (block, hint) pair.
+    /// Comparable to standard BLAKE3 mode but with AES-NI acceleration.
+    #[arg(long, default_value = "false")]
+    aes_standard: bool,
 }
 
 fn block_key(master_seed: &[u8; 32], alpha: u64) -> [u8; 32] {
@@ -107,6 +112,18 @@ fn aes_block_key_iv(master_seed: &[u8; 32], alpha: u64) -> ([u8; 16], [u8; 16]) 
     let key: [u8; 16] = bytes[0..16].try_into().unwrap();
     let iv: [u8; 16] = bytes[16..32].try_into().unwrap();
     (key, iv)
+}
+
+/// Per-hint AES PRF: derive 32 bytes using AES-CTR with block key and hint as IV
+/// Uses the block's AES key and constructs IV from hint index - pure AES, no BLAKE3
+fn aes_hint_prf(block_key: &[u8; 16], hint_j: u64) -> [u8; 32] {
+    let mut iv = [0u8; 16];
+    iv[0..8].copy_from_slice(&hint_j.to_le_bytes());
+    
+    let mut cipher = Aes128Ctr::new(block_key.into(), &iv.into());
+    let mut output = [0u8; 32];
+    cipher.apply_keystream(&mut output);
+    output
 }
 
 /// Find a divisor of n that is closest to target
@@ -280,6 +297,51 @@ fn process_block_aes(
     (partial_hints, xor_count)
 }
 
+/// Process a single block using per-hint AES PRF (like standard but with AES)
+fn process_block_aes_standard(
+    alpha: usize,
+    db_bytes: &[u8],
+    block_size_bytes: usize,
+    w: usize,
+    num_hints: usize,
+    master_seed: &[u8; 32],
+) -> (Vec<[u8; 32]>, u64) {
+    let block_start = alpha * block_size_bytes;
+    let block_bytes = &db_bytes[block_start..block_start + block_size_bytes];
+
+    let mut partial_hints = vec![[0u8; 32]; num_hints];
+    let mut xor_count = 0u64;
+
+    // Derive block key once (one BLAKE3 per block, then pure AES per hint)
+    let (block_key, _) = aes_block_key_iv(master_seed, alpha as u64);
+
+    for j in 0..num_hints {
+        let r = aes_hint_prf(&block_key, j as u64);
+        
+        // Bit 0 of first byte determines inclusion (Bernoulli 1/2)
+        let include = (r[0] & 1) == 1;
+        if !include {
+            continue;
+        }
+
+        // Derive offset beta within block from PRF output
+        let rand64 = u64::from_le_bytes(r[1..9].try_into().unwrap());
+        let beta = (rand64 as usize) % w;
+
+        // Fetch the 32-byte entry at DB[alpha * w + beta]
+        let entry_offset = beta * WORD_SIZE;
+        let entry: [u8; 32] = block_bytes[entry_offset..entry_offset + WORD_SIZE]
+            .try_into()
+            .unwrap();
+
+        // XOR into partial hint[j]
+        xor_32(&mut partial_hints[j], &entry);
+        xor_count += 1;
+    }
+
+    (partial_hints, xor_count)
+}
+
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
@@ -292,7 +354,7 @@ fn main() -> eyre::Result<()> {
     }
     let num_threads = rayon::current_num_threads();
     
-    let mode_str = if args.aes { "AES-CTR" } else if args.xof { "XOF" } else { "Standard" };
+    let mode_str = if args.aes { "AES-CTR" } else if args.aes_standard { "AES-Standard" } else if args.xof { "XOF" } else { "Standard" };
     println!("Plinko PIR Hint Generator (Parallel, {} mode)", mode_str);
     println!("================================================");
     println!("Database: {:?}", args.db_path);
@@ -361,6 +423,8 @@ fn main() -> eyre::Result<()> {
     if args.aes {
         println!("  AES-CTR streams: {} (one per block)", c);
         println!("  AES-CTR bytes: {:.2e}", (c * num_hints * BYTES_PER_HINT) as f64);
+    } else if args.aes_standard {
+        println!("  AES PRF calls: {:.2e} (one per block*hint)", (c as u64 * num_hints as u64) as f64);
     } else if args.xof {
         println!("  XOF streams: {} (one per block)", c);
         println!("  XOF bytes: {:.2e}", (c * num_hints * BYTES_PER_HINT) as f64);
@@ -389,6 +453,7 @@ fn main() -> eyre::Result<()> {
     let progress_counter = AtomicU64::new(0);
     let use_xof = args.xof;
     let use_aes = args.aes;
+    let use_aes_standard = args.aes_standard;
 
     // Parallel map-reduce over blocks
     let (hints, total_xors) = (0..c)
@@ -396,6 +461,15 @@ fn main() -> eyre::Result<()> {
         .map(|alpha| {
             let result = if use_aes {
                 process_block_aes(
+                    alpha,
+                    db_bytes,
+                    block_size_bytes,
+                    w,
+                    num_hints,
+                    &master_seed,
+                )
+            } else if use_aes_standard {
+                process_block_aes_standard(
                     alpha,
                     db_bytes,
                     block_size_bytes,
@@ -458,6 +532,9 @@ fn main() -> eyre::Result<()> {
         let aes_streams_per_sec = c as f64 / duration.as_secs_f64();
         let aes_bytes_per_sec = (c * num_hints * BYTES_PER_HINT) as f64 / duration.as_secs_f64();
         println!("AES-CTR streams: {:.2}/s ({:.2} GB/s output)", aes_streams_per_sec, aes_bytes_per_sec / 1e9);
+    } else if args.aes_standard {
+        let prf_per_sec = ((c as u64) * (num_hints as u64)) as f64 / duration.as_secs_f64();
+        println!("AES PRF calls: {:.2}M/s", prf_per_sec / 1_000_000.0);
     } else if args.xof {
         let xof_streams_per_sec = c as f64 / duration.as_secs_f64();
         let xof_bytes_per_sec = (c * num_hints * BYTES_PER_HINT) as f64 / duration.as_secs_f64();
