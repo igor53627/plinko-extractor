@@ -92,18 +92,22 @@ cd state-syncer && cargo build --release --bin plinko_hints
 
 See [docs/xof-optimization.md](docs/xof-optimization.md) for details on the XOF optimization.
 
-### Benchmark Results (Mainnet, λ=128)
+### Benchmark Results (Mainnet, λ=128, w=49177)
 
-*64-core AMD EPYC, 512GB RAM*
+*AMD EPYC 9375F, 1.1TB RAM*
 
-| Mode | Time | Throughput | Client Hint Storage |
-|------|------|------------|---------------------|
-| Standard | 19.5 min | 265M PRF/s | 192 MB |
-| XOF | 19.0 min | 2.44 GB/s XOF | 192 MB |
+| Environment | vCPUs | Time | Throughput | XOR ops/s | Hint Storage |
+|-------------|-------|------|------------|-----------|--------------|
+| Bare metal | 64 | 22 min | 55.8 MB/s | 117M/s | 192 MB |
+| SEV-SNP TEE | 32 | 57 min | 21.5 MB/s | 45M/s | 192 MB |
 
-At high λ, both modes achieve similar performance because the bottleneck shifts to XOR operations (~132M/s) and memory bandwidth during parallel reduce.
+**SEV-SNP overhead: ~2.6x** (with half vCPUs). Normalized for vCPUs: ~1.3x.
 
-Full benchmark results: https://gist.github.com/igor53627/44f237c4f89fb6dcf20a58d71af0d048
+The bottleneck is memory bandwidth (~117M XOR/s), not PRF computation. Both BLAKE3 and AES-CTR modes achieve similar performance with optimal Plinko parameters (w=√N).
+
+Full benchmark results: 
+- [Hint generation benchmark](https://gist.github.com/igor53627/44f237c4f89fb6dcf20a58d71af0d048)
+- [SEV-SNP TEE benchmark](https://gist.github.com/igor53627/4c21ea3ea9d8963d4d20c9277cc45754)
 
 ## Update Strategy
 
