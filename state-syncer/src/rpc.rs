@@ -31,6 +31,17 @@ struct Transaction {
 }
 
 impl EthClient {
+    /// Creates a new EthClient configured to call the given Ethereum JSON-RPC endpoint.
+    ///
+    /// `url` is the HTTP(S) endpoint for JSON-RPC requests (e.g. "http://localhost:8545").
+    /// The returned client uses a blocking HTTP client with a 120-second timeout.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let client = EthClient::new("http://localhost:8545".to_string());
+    /// // use client to call RPC methods...
+    /// ```
     pub fn new(url: String) -> Self {
         Self {
             url,
@@ -41,6 +52,20 @@ impl EthClient {
         }
     }
 
+    /// Send a single JSON-RPC request and return the parsed result.
+    ///
+    /// On success returns the deserialized RPC `result`. Returns an `Err` if the HTTP request or
+    /// JSON parsing fails, if the RPC response contains an `error` field, or if the `result` field is `null`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use serde_json::json;
+    ///
+    /// let client = EthClient::new("http://localhost:8545".to_string());
+    /// let net_version: String = client.call("net_version", json!([])).unwrap();
+    /// assert!(!net_version.is_empty());
+    /// ```
     fn call<T: for<'de> Deserialize<'de>>(
         &self,
         method: &str,
@@ -63,6 +88,29 @@ impl EthClient {
             .ok_or_else(|| eyre::eyre!("RPC returned null result"))
     }
 
+    /// Sends the given JSON-RPC method calls in batched requests (chunked to 100 per batch) and
+    /// returns a vector of per-call results aligned with the provided `params_list` order.
+    ///
+    /// Each entry in the returned vector corresponds to the same-position entry in `params_list`:
+    /// an `Ok(T)` when the RPC returned a valid result for that call, or an `Err` when that call
+    /// produced an RPC error. If the entire batch fails to parse or returns a single error object,
+    /// this function returns an `Err`.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let params_list = vec![
+    ///     serde_json::json!(["0xdeadbeef", "latest"]),
+    ///     serde_json::json!(["0xcafebabe", "latest"]),
+    /// ];
+    /// let results: Vec<Result<serde_json::Value>> = client.call_batch("eth_getBalance", params_list)?;
+    /// for res in results {
+    ///     match res {
+    ///         Ok(val) => println!("balance: {:?}", val),
+    ///         Err(e) => eprintln!("rpc error: {}", e),
+    ///     }
+    /// }
+    /// ```
     pub fn call_batch<T: for<'de> Deserialize<'de>>(
         &self,
         method: &str,
@@ -136,6 +184,21 @@ impl EthClient {
 
 use crate::address_mapping::AddressMapping;
 
+/// Returns balance change updates for tracked addresses touched by a block.
+///
+/// This queries the given `EthClient` for transactions in `block_number`, identifies the
+/// touched addresses present in `address_mapping`, fetches their balances at that block,
+/// and returns a `Vec<DBUpdate>` for each tracked address whose stored balance (via
+/// `manager`) differs from the fetched balance.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::collections::HashMap;
+/// # use crate::{EthClient, AddressMapping, DBUpdate};
+/// // Assume `client`, `manager`, and `address_mapping` are initialized.
+/// // let updates = fetch_updates_rpc(&client, 12345, &manager, &address_mapping).unwrap();
+/// ```
 pub fn fetch_updates_rpc(
     client: &EthClient,
     block_number: u64,
@@ -202,6 +265,29 @@ pub fn fetch_updates_rpc(
     Ok(updates)
 }
 
+/// Fetches balances for addresses touched by transactions in a block and returns their mapped indices with balances.
+///
+/// This queries the block's transactions, collects unique addresses touched (from/to), filters them by `address_mapping`, batch-requests each address balance at `block_number`, and returns a vector of (index, balance) for each tracked address whose balance was successfully parsed.
+///
+/// # Parameters
+/// - `client`: Ethereum RPC client used to fetch block data and balances.
+/// - `block_number`: Block number to inspect and use when querying balances.
+/// - `address_mapping`: Mapping from lowercase hex address strings to stored indices; only addresses present in this mapping are returned.
+///
+/// # Returns
+/// A `Vec<(u64, u128)>` where each tuple is `(index, balance)` — `index` is the mapped index from `address_mapping` and `balance` is the account balance at `block_number` parsed as a `u128`.
+///
+/// # Examples
+///
+/// ```
+/// // Assume `client` and `address_mapping` are previously constructed:
+/// // let client = EthClient::new("https://mainnet.infura.io".into());
+/// // let address_mapping = AddressMapping::from_iter(vec![("0xabc...".to_string(), 42u64)]);
+/// let states = fetch_touched_states(&client, 12_345_678u64, &address_mapping).unwrap();
+/// for (idx, balance) in states {
+///     println!("index={} balance={}", idx, balance);
+/// }
+/// ```
 pub fn fetch_touched_states(
     client: &EthClient,
     block_number: u64,

@@ -114,8 +114,17 @@ fn aes_block_key_iv(master_seed: &[u8; 32], alpha: u64) -> ([u8; 16], [u8; 16]) 
     (key, iv)
 }
 
-/// Per-hint AES PRF: derive 32 bytes using AES-CTR with block key and hint as IV
-/// Uses the block's AES key and constructs IV from hint index - pure AES, no BLAKE3
+/// Derives a 32-byte pseudorandom value for a hint using AES-128-CTR with a per-block key.
+///
+/// The IV is formed from the little-endian bytes of `hint_j` in its first 8 bytes; remaining IV bytes are zero.
+///
+/// # Examples
+///
+/// ```
+/// let key = [0u8; 16];
+/// let out = aes_hint_prf(&key, 1);
+/// assert_eq!(out.len(), 32);
+/// ```
 fn aes_hint_prf(block_key: &[u8; 16], hint_j: u64) -> [u8; 32] {
     let mut iv = [0u8; 16];
     iv[0..8].copy_from_slice(&hint_j.to_le_bytes());
@@ -126,7 +135,24 @@ fn aes_hint_prf(block_key: &[u8; 16], hint_j: u64) -> [u8; 32] {
     output
 }
 
-/// Find a divisor of n that is closest to target
+/// Selects a divisor of `n` that is closest to `target`.
+///
+/// If `target` divides `n`, that value is chosen. Otherwise the function
+/// searches outward from `target` to find the nearest value that divides `n`.
+/// If no divisor is found in the search range, `1` is returned as a fallback.
+///
+/// # Examples
+///
+/// ```
+/// // exact match
+/// assert_eq!(find_nearest_divisor(100, 10), 10);
+///
+/// // nearest divisor above target
+/// assert_eq!(find_nearest_divisor(100, 9), 10);
+///
+/// // prime n falls back to 1
+/// assert_eq!(find_nearest_divisor(13, 5), 1);
+/// ```
 fn find_nearest_divisor(n: usize, target: usize) -> usize {
     if n % target == 0 {
         return target;
@@ -146,7 +172,38 @@ fn find_nearest_divisor(n: usize, target: usize) -> usize {
     1
 }
 
-/// Process a single block using standard per-hint PRF
+/// Computes per-hint partial hints for a single block by selecting pseudorandom entries
+/// from the block and XOR-accumulating them into per-hint 32-byte values.
+///
+/// For each of the `num_hints` hint indices this function deterministically decides
+/// whether to include a single 32-byte database entry from the specified block and,
+/// when included, XORs that entry into the corresponding partial hint. Selection is
+/// driven by a block-specific PRF derived from `master_seed` and `alpha`.
+///
+/// # Examples
+///
+/// ```
+/// # use std::convert::TryInto;
+/// // Minimal example: one block with w = 1 entry, a single hint.
+/// let master_seed = [0u8; 32];
+/// let w = 1usize;
+/// let num_hints = 1usize;
+/// let block_size_bytes = w * 32;
+/// // Database: one block containing one 32-byte entry filled with 0x01
+/// let mut db_bytes = vec![0u8; block_size_bytes];
+/// for b in db_bytes.iter_mut() { *b = 1u8; }
+///
+/// let (partial_hints, xor_count) = process_block_standard(0, &db_bytes, block_size_bytes, w, num_hints, &master_seed);
+/// assert_eq!(partial_hints.len(), num_hints);
+/// // xor_count is the number of entries XORed into hints (0 or more)
+/// assert!(xor_count <= num_hints as u64);
+/// ```
+///
+/// # Returns
+///
+/// A tuple `(partial_hints, xor_count)` where `partial_hints` is a vector of `num_hints`
+/// 32-byte arrays containing the XOR-accumulated values for each hint, and `xor_count`
+/// is the total number of database entries XORed across all hints.
 fn process_block_standard(
     alpha: usize,
     db_bytes: &[u8],
@@ -190,7 +247,33 @@ fn process_block_standard(
     (partial_hints, xor_count)
 }
 
-/// Process a single block using XOF mode - one stream per block
+/// Process a single database block and produce per-hint 32-byte partial hints using a block-level XOF.
+///
+/// For each hint index from 0..num_hints this reads BYTES_PER_HINT bytes from a BLAKE3 XOF seeded by
+/// the master seed and the block index, uses the first byte's least-significant bit to decide
+/// whether to include the hint, derives a beta index from the next 8 bytes modulo `w`, fetches the
+/// corresponding 32-byte entry from the block, and XORs that entry into the hint's accumulator.
+///
+/// # Returns
+///
+/// A tuple `(partial_hints, xor_count)` where `partial_hints` is a `Vec<[u8; 32]>` of length
+/// `num_hints` containing the XOR-accumulated partial hints for this block, and `xor_count` is the
+/// number of entry XORs performed for this block.
+///
+/// # Examples
+///
+/// ```
+/// // Create a dummy block with w = 4 entries of 32 bytes (all zeros) and a single block in db_bytes.
+/// let w = 4usize;
+/// let num_hints = 8usize;
+/// let block_size_bytes = w * 32;
+/// let db_bytes = vec![0u8; block_size_bytes]; // one block
+/// let master_seed = [0u8; 32];
+///
+/// let (partial_hints, xor_count) = process_block_xof(0, &db_bytes, block_size_bytes, w, num_hints, &master_seed);
+/// assert_eq!(partial_hints.len(), num_hints);
+/// // partial_hints contains 32-byte arrays; xor_count is a non-negative integer
+/// ```
 fn process_block_xof(
     alpha: usize,
     db_bytes: &[u8],
@@ -241,7 +324,35 @@ fn process_block_xof(
     (partial_hints, xor_count)
 }
 
-/// Process a single block using AES-CTR mode - hardware accelerated via AES-NI
+/// Processes a single database block using AES-CTR as the per-block PRF and produces partial hints.
+///
+/// The returned vector contains `num_hints` 32-byte partial hints where each hint is the XOR
+/// accumulation of database entries selected by the AES-CTR-generated per-hint values. The
+/// accompanying count is the number of database entries XORed across all hints for this block.
+///
+/// # Returns
+///
+/// A tuple `(partial_hints, xor_count)` where `partial_hints` is a `Vec<[u8; 32]>` of length
+/// `num_hints` containing the accumulated XORed entries for each hint, and `xor_count` is the
+/// total number of entries XORed into those hints for this block.
+///
+/// # Examples
+///
+/// ```
+/// let w = 2;
+/// let num_hints = 4;
+/// let block_size_bytes = w * 32;
+/// // Construct a single block with two 32-byte entries (all zeros and all ones)
+/// let mut block = Vec::new();
+/// block.extend_from_slice(&[0u8; 32]);
+/// block.extend_from_slice(&[1u8; 32]);
+/// // db_bytes contains one block only
+/// let db_bytes = block;
+/// let master_seed = [0u8; 32];
+/// let (partial_hints, xor_count) = process_block_aes(0, &db_bytes, block_size_bytes, w, num_hints, &master_seed);
+/// assert_eq!(partial_hints.len(), num_hints);
+/// assert!(xor_count <= num_hints as u64);
+/// ```
 fn process_block_aes(
     alpha: usize,
     db_bytes: &[u8],
@@ -293,7 +404,47 @@ fn process_block_aes(
     (partial_hints, xor_count)
 }
 
-/// Process a single block using per-hint AES PRF (like standard but with AES)
+/// Process one block using an AES-based per-hint PRF to produce partial hints.
+///
+/// For the block identified by `alpha`, derives an AES block key from `master_seed` and
+/// uses AES-CTR as a per-hint PRF to decide which entries from the block to include
+/// in each hint. For each hint index `j`, the PRF output's lowest bit selects inclusion;
+/// when included, the next 8 bytes (little-endian) determine an entry index `beta` in
+/// [0, w) whose 32-byte value is XORed into that hint's accumulator.
+///
+/// # Parameters
+///
+/// - `alpha`: block index to process.
+/// - `db_bytes`: raw database bytes (contiguous 32-byte entries); the function reads the
+///   slice corresponding to the block `alpha`.
+/// - `block_size_bytes`: number of bytes in one block (equals `w * 32`).
+/// - `w`: number of 32-byte entries per block.
+/// - `num_hints`: total number of hints (typically `lambda * w`).
+/// - `master_seed`: 32-byte master seed used to derive the per-block AES key.
+///
+/// # Returns
+///
+/// A tuple `(partial_hints, xor_count)` where `partial_hints` is a vector of length
+/// `num_hints` containing 32-byte accumulators (each the XOR of selected entries for
+/// that hint), and `xor_count` is the total number of XOR operations performed.
+///
+/// # Examples
+///
+/// ```
+/// // Single-block DB with w = 2 entries, each 32 bytes.
+/// let w = 2usize;
+/// let num_hints = 4usize;
+/// let block_size_bytes = w * 32;
+/// let mut db = vec![0u8; block_size_bytes]; // one block
+/// // populate two distinct entries for test
+/// db[0..32].copy_from_slice(&[1u8; 32]);
+/// db[32..64].copy_from_slice(&[2u8; 32]);
+/// let master_seed = &[0u8; 32];
+/// let (hints, xor_count) = process_block_aes_standard(0, &db, block_size_bytes, w, num_hints, master_seed);
+/// assert_eq!(hints.len(), num_hints);
+/// // xor_count is between 0 and num_hints
+/// assert!(xor_count <= num_hints as u64);
+/// ```
 fn process_block_aes_standard(
     alpha: usize,
     db_bytes: &[u8],
@@ -338,6 +489,20 @@ fn process_block_aes_standard(
     (partial_hints, xor_count)
 }
 
+/// CLI entrypoint that generates Plinko PIR hints from a memory‑mapped database, runs the chosen PRF mode in parallel across blocks, and prints benchmarking and coverage statistics.
+///
+/// This function parses command‑line arguments, configures threading and PRF mode, memory‑maps the database file, partitions it into blocks, generates per‑hint XOR aggregates in parallel (using BLAKE3 XOF, per‑hint BLAKE3, AES‑CTR stream, or AES per‑hint modes), and prints throughput, XOR counts, and hint coverage. It uses a fixed master seed for reproducible benchmarking and supports optional truncation when N is not divisible by w.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Run the compiled binary with a database path and parameters:
+/// // cargo run --release --bin plinko_hints -- --db-path ./db.bin --lambda 8 --threads 8
+/// ```
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an `eyre::Report` describing the failure.
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 

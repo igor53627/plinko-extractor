@@ -17,6 +17,23 @@ struct Args {
     block_size: usize,
 }
 
+/// Runs the Plinko hint-generation benchmark: opens and memory-maps the database file, computes
+/// hint dimensions, allocates client-side hint storage, simulates per-row scalar updates into the
+/// hint store, and reports timing and throughput.
+///
+/// The function prints progress and summary statistics to stdout.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Run from the shell to benchmark a database file:
+/// // cargo run --release -- --db-path /path/to/database.bin --block-size 4096
+/// ```
+///
+/// # Returns
+///
+/// An `eyre::Result<()>` which is `Ok(())` on success, or an error if opening the file,
+/// reading metadata, or creating the memory map fails.
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 

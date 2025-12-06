@@ -82,10 +82,57 @@ impl Config {
         self.public_root.join("snapshots")
     }
 
+    /// Returns the path to the public account mapping file inside `public_root`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// struct Tmp { public_root: PathBuf }
+    /// impl Tmp {
+    ///     fn public_address_mapping_path(&self) -> PathBuf {
+    ///         self.public_root.join("account-mapping.bin")
+    ///     }
+    /// }
+    ///
+    /// let cfg = Tmp { public_root: PathBuf::from("/public") };
+    /// assert_eq!(
+    ///     cfg.public_address_mapping_path(),
+    ///     PathBuf::from("/public/account-mapping.bin")
+    /// );
+    /// ```
     pub fn public_address_mapping_path(&self) -> PathBuf {
         self.public_root.join("account-mapping.bin")
     }
 
+    /// Return the configured poll interval as a `Duration`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use std::path::PathBuf;
+    ///
+    /// let cfg = Config {
+    ///     database_path: PathBuf::from("/data/database.bin"),
+    ///     address_mapping_path: PathBuf::from("/data/account-mapping.bin"),
+    ///     public_root: PathBuf::from("/public"),
+    ///     delta_dir: PathBuf::from("/public/deltas"),
+    ///     http_port: 3002,
+    ///     ipfs_api: None,
+    ///     ipfs_gateway: "http://localhost:8080/ipfs".to_string(),
+    ///     rpc_url: "http://eth-mock:8545".to_string(),
+    ///     rpc_token: None,
+    ///     start_block: None,
+    ///     simulated: true,
+    ///     poll_interval_ms: 1500,
+    ///     snapshot_every: 0,
+    ///     concurrency: 10,
+    /// };
+    ///
+    /// assert_eq!(cfg.poll_interval(), Duration::from_millis(1500));
+    /// ```
     pub fn poll_interval(&self) -> Duration {
         Duration::from_millis(self.poll_interval_ms)
     }

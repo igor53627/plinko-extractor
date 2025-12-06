@@ -28,6 +28,23 @@ struct Metadata {
     block: u64,
 }
 
+/// Program entry point that initializes logging, metrics, optional RPC client and address
+/// mapping, loads the local database, and then continuously processes blocks to produce
+/// and persist state deltas either in simulated mode or by fetching touched states from
+/// an Ethereum RPC provider.
+///
+/// In simulated mode, the process generates deterministic synthetic updates per block,
+/// applies them to the local database, and writes a delta file for each block. In real
+/// RPC mode, the process concurrently fetches touched states for upcoming blocks (preserving
+/// in-order application), computes and applies updates that change state, and writes per-block
+/// delta files. The function blocks until the program exits.
+///
+/// # Examples
+///
+/// ```text
+/// # To run the process as a binary:
+/// cargo run --release
+/// ```
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -239,6 +256,31 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Generates a deterministic set of simulated account updates for a given block.
+///
+/// Each update is a tuple of (index, [u64; 4]) where `index` is an account index within
+/// the range [0, db_size) and the array encodes the new 4-word account value.
+/// If `db_size` is 0, an empty vector is returned.
+///
+/// # Returns
+///
+/// A vector of up to 2000 simulated updates for the block. Each update's index is computed
+/// as `(block * 2000 + i) % db_size` and the value is `[block * 1000 + i, 0, 0, 0]`.
+///
+/// # Examples
+///
+/// ```
+/// // small database and block for demonstration
+/// let updates = simulate_updates(10, 2);
+/// assert!(!updates.is_empty());
+/// // first update index and value
+/// let (idx0, val0) = updates[0];
+/// assert_eq!(idx0, (2 * 2000 + 0) % 10);
+/// assert_eq!(val0, [2 * 1000 + 0, 0, 0, 0]);
+/// // empty when db_size == 0
+/// let empty = simulate_updates(0, 1);
+/// assert!(empty.is_empty());
+/// ```
 fn simulate_updates(db_size: u64, block: u64) -> Vec<(u64, [u64; 4])> {
     if db_size == 0 {
         return vec![];
@@ -253,6 +295,28 @@ fn simulate_updates(db_size: u64, block: u64) -> Vec<(u64, [u64; 4])> {
     updates
 }
 
+/// Writes `deltas` to `path` as a binary delta file.
+///
+/// The file format is:
+/// - u64: number of delta entries (little-endian)
+/// - u64: entry length in u64 words (little-endian, equal to `DB_ENTRY_U64_COUNT`)
+/// - repeated per entry:
+///   - u64: account index (little-endian)
+///   - `DB_ENTRY_U64_COUNT` × u64: four 64-bit words from `AccountDelta::delta` (little-endian)
+///
+/// # Examples
+///
+/// ```
+/// # use std::path::Path;
+/// # // `AccountDelta` and `save_delta` are assumed to be in scope for this example.
+/// let deltas: Vec<AccountDelta> = Vec::new();
+/// let tmp = std::env::temp_dir().join("delta-example.bin");
+/// save_delta(tmp.as_path(), &deltas).unwrap();
+/// ```
+///
+/// # Errors
+///
+/// Returns an `Err` if creating, writing, or flushing the file fails.
 fn save_delta(path: &Path, deltas: &[AccountDelta]) -> Result<()> {
     let mut file = File::create(path)?;
 
@@ -271,6 +335,22 @@ fn save_delta(path: &Path, deltas: &[AccountDelta]) -> Result<()> {
     Ok(())
 }
 
+/// Starts an HTTP metrics and health server bound to 0.0.0.0 on the given port.
+///
+/// The server exposes two routes:
+/// - `GET /health` which responds with `OK`
+/// - `GET /metrics` which responds with an empty JSON object (`{}`)
+///
+/// # Examples
+///
+/// ```
+/// # use tokio::runtime::Runtime;
+/// # let rt = Runtime::new().unwrap();
+/// rt.spawn(async {
+///     // Runs the metrics server on port 9100 in the background.
+///     start_metrics_server(9100).await;
+/// });
+/// ```
 async fn start_metrics_server(port: u16) {
     use axum::{routing::get, Router};
 

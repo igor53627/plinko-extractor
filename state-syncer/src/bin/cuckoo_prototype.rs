@@ -14,6 +14,41 @@ struct CuckooTable {
 }
 
 impl CuckooTable {
+    /// Construct a new CuckooTable sized to accommodate approximately `n` entries and initialized with random hash seeds.
+    
+    ///
+    
+    /// The table is allocated with floor(n * CUCKOO_OVERHEAD) slots, all empty, and a set of `KAPPA` randomly generated 64-bit seeds used to derive the table's hash positions.
+    
+    ///
+    
+    /// # Arguments
+    
+    ///
+    
+    /// * `n` - Expected number of entries to store; used to size the internal table.
+    
+    ///
+    
+    /// # Returns
+    
+    ///
+    
+    /// A `CuckooTable` instance with an empty table and `KAPPA` seeds initialized.
+    
+    ///
+    
+    /// # Examples
+    
+    ///
+    
+    /// ```
+    
+    /// let table = CuckooTable::new(1_000);
+    
+    /// // table is ready to receive up to ~1_000 entries (with CUCKOO_OVERHEAD applied)
+    
+    /// ```
     fn new(n: usize) -> Self {
         // Cuckoo table needs ~1.5x space for reliable insertion with 3 hash functions
         let size = (n as f64 * CUCKOO_OVERHEAD) as usize;
@@ -36,6 +71,26 @@ impl CuckooTable {
         (h as usize) % self.size
     }
 
+    /// Attempts to place an (address, index) pair into the cuckoo table, using bounded evictions if necessary.
+    ///
+    /// If any of the KAPPA candidate slots for the provided address is empty, the pair is placed there.
+    /// Otherwise the function performs up to MAX_EVICTIONS eviction iterations: it chooses a random
+    /// candidate slot, evicts its occupant into the current item, and repeats the insertion attempt with
+    /// the evicted item. The process stops before the final iteration to avoid risking removal of an
+    /// existing element.
+    ///
+    /// On success the function returns Ok(()). If no placement is found within MAX_EVICTIONS, the
+    /// function returns Err((addr, original_idx)) where the tuple is the single entry that could not be
+    /// placed (this may be the original input or an item displaced during eviction).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut table = CuckooTable::new(10);
+    /// let addr = [0u8; 20];
+    /// let res = table.insert(addr, 42);
+    /// assert!(res.is_ok() || matches!(res, Err((_, _))));
+    /// ```
     fn insert(&mut self, addr: [u8; 20], original_idx: u32) -> Result<(), ([u8; 20], u32)> {
         let mut current = (addr, original_idx);
         let mut rng = rand::thread_rng();
@@ -118,6 +173,25 @@ fn generate_random_addresses(n: usize) -> Vec<[u8; 20]> {
         .collect()
 }
 
+/// Runs the Plinko Keyword PIR prototype that compares a sorted lookup table against a cuckoo-hashing-based table and prints build times, storage and query-overhead comparisons, single-address lookup timings, and a projection for Ethereum mainnet scale.
+///
+/// The program:
+/// - Tests three dataset sizes (10,000; 100,000; 1,000,000), generating random 20-byte addresses and building both a SortedLookup and a CuckooTable for each size.
+/// - Measures and prints build times for both approaches; collects and reports any failed cuckoo insertions.
+/// - Compares client-side storage requirements and query overhead (PIR queries per lookup) for both constructions.
+/// - Verifies lookup correctness by checking that SortedLookup.get and CuckooTable.get return the same result for a sample address and prints single-address lookup timings.
+/// - Projects storage and query trade-offs for 330,000,000 Ethereum mainnet accounts and prints a trade-off summary for Plinko hint strategies.
+///
+/// Note: this is an executable prototype whose primary observable behavior is printed output; it does not return a value.
+///
+/// # Examples
+///
+/// ```
+/// // Run the prototype (prints results to stdout/stderr).
+/// fn run_prototype() {
+///     main();
+/// }
+/// ```
 fn main() {
     println!("=== Plinko Keyword PIR Prototype ===\n");
     println!("Comparing: Original (sorted lookup table) vs Cuckoo Hashing\n");
