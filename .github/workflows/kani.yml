@@ -1,12 +1,7 @@
 name: Kani Formal Verification
 
 on:
-  # Only run on push to main (not PRs) for security - self-hosted runner
-  push:
-    branches: [main]
-    paths:
-      - 'state-syncer/src/iprf.rs'
-      - 'state-syncer/src/kani_proofs.rs'
+  # Manual only - Kani verification is slow, run on-demand
   workflow_dispatch:
 
 jobs:
