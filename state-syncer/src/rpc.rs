@@ -5,6 +5,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashSet;
+use tracing::warn;
 
 #[derive(Clone)]
 pub struct EthClient {
@@ -81,11 +82,11 @@ impl EthClient {
         let resp: RpcResponse<T> = self.client.post(&self.url).json(&body).send()?.json()?;
 
         if let Some(err) = resp.error {
-            return Err(eyre::eyre!("RPC Error: {:?}", err));
+            return Err(eyre::eyre!("RPC error for {}: {:?}", method, err));
         }
 
         resp.result
-            .ok_or_else(|| eyre::eyre!("RPC returned null result"))
+            .ok_or_else(|| eyre::eyre!("RPC method {} returned null result", method))
     }
 
     /// Sends the given JSON-RPC method calls in batched requests (chunked to 100 per batch) and
@@ -245,25 +246,30 @@ pub fn fetch_updates_rpc(
     let balances: Vec<Result<String>> = client.call_batch("eth_getBalance", params)?;
 
     for (i, addr) in tracked_addrs.iter().enumerate() {
-        if let Ok(hex_balance) = &balances[i] {
-            let balance = u128::from_str_radix(hex_balance.trim_start_matches("0x"), 16)?;
-            let index = address_mapping.get(*addr).unwrap(); // Safe because we filtered
+        match &balances[i] {
+            Ok(hex_balance) => {
+                let balance = u128::from_str_radix(hex_balance.trim_start_matches("0x"), 16)?;
+                let index = address_mapping.get(*addr).unwrap(); // Safe because we filtered
 
-            let balance_idx = index + 1;
-            let old_balance_entry = manager
-                .get_value(balance_idx)
-                .unwrap_or([0; DB_ENTRY_U64_COUNT]);
+                let balance_idx = index + 1;
+                let old_balance_entry = manager
+                    .get_value(balance_idx)
+                    .unwrap_or([0; DB_ENTRY_U64_COUNT]);
 
-            let mut new_balance_entry = [0u64; DB_ENTRY_U64_COUNT];
-            new_balance_entry[0] = balance as u64;
-            new_balance_entry[1] = (balance >> 64) as u64;
+                let mut new_balance_entry = [0u64; DB_ENTRY_U64_COUNT];
+                new_balance_entry[0] = balance as u64;
+                new_balance_entry[1] = (balance >> 64) as u64;
 
-            if old_balance_entry != new_balance_entry {
-                updates.push(DBUpdate {
-                    index: balance_idx,
-                    old_value: old_balance_entry,
-                    new_value: new_balance_entry,
-                });
+                if old_balance_entry != new_balance_entry {
+                    updates.push(DBUpdate {
+                        index: balance_idx,
+                        old_value: old_balance_entry,
+                        new_value: new_balance_entry,
+                    });
+                }
+            }
+            Err(e) => {
+                warn!("Failed to fetch balance for {}: {}", addr, e);
             }
         }
     }
@@ -332,10 +338,16 @@ pub fn fetch_touched_states(
     let balances: Vec<Result<String>> = client.call_batch("eth_getBalance", params)?;
 
     let mut results = Vec::with_capacity(tracked.len());
-    for (i, (_, idx)) in tracked.iter().enumerate() {
-        if let Ok(hex_balance) = &balances[i] {
-            if let Ok(balance) = u128::from_str_radix(hex_balance.trim_start_matches("0x"), 16) {
-                results.push((*idx, balance));
+    for (i, (addr, idx)) in tracked.iter().enumerate() {
+        match &balances[i] {
+            Ok(hex_balance) => {
+                if let Ok(balance) = u128::from_str_radix(hex_balance.trim_start_matches("0x"), 16)
+                {
+                    results.push((*idx, balance));
+                }
+            }
+            Err(e) => {
+                warn!("Failed to fetch balance for {}: {}", addr, e);
             }
         }
     }
