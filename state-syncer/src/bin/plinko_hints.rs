@@ -191,6 +191,11 @@ fn main() -> eyre::Result<()> {
     }
     let num_threads = rayon::current_num_threads();
 
+    if args.lambda == 0 {
+        eprintln!("Error: lambda must be >= 1");
+        std::process::exit(1);
+    }
+
     let mode_str = if args.tee { "iPRF-TEE" } else { "iPRF" };
     println!("Plinko PIR Hint Generator (Parallel, {} mode)", mode_str);
     println!("================================================");
@@ -214,6 +219,10 @@ fn main() -> eyre::Result<()> {
         "DB size must be multiple of 32 bytes"
     );
     let n_entries = db_bytes.len() / WORD_SIZE;
+    if n_entries == 0 {
+        eprintln!("Error: Database must contain at least one entry");
+        std::process::exit(1);
+    }
     println!("Total Entries (N): {}", n_entries);
 
     let w = args.entries_per_block.unwrap_or_else(|| {
@@ -256,17 +265,25 @@ fn main() -> eyre::Result<()> {
 
     let num_hints = args.lambda * w;
 
-    if args.lambda == 0 {
-        eprintln!("Error: lambda must be >= 1");
-        std::process::exit(1);
-    }
-    if n_entries == 0 {
-        eprintln!("Error: Database must contain at least one entry");
-        std::process::exit(1);
-    }
     if num_hints == 0 {
         eprintln!("Error: num_hints must be > 0 (lambda * w = 0)");
         std::process::exit(1);
+    }
+
+    // Validate TEE mode won't truncate preimages
+    if args.tee {
+        let expected_preimages = n_entries as f64 / num_hints as f64;
+        if expected_preimages > 48.0 {
+            eprintln!(
+                "Error: Expected {:.1} preimages/hint exceeds safe threshold for TEE mode.",
+                expected_preimages
+            );
+            eprintln!(
+                "       TEE mode will truncate at MAX_PREIMAGES=64, causing incorrect hints."
+            );
+            eprintln!("       Increase num_hints (lambda) or use non-TEE iPRF mode.");
+            std::process::exit(1);
+        }
     }
 
     let hint_storage_bytes = num_hints * WORD_SIZE;
@@ -360,20 +377,6 @@ fn main() -> eyre::Result<()> {
         100.0 * non_zero_hints as f64 / num_hints as f64
     );
 
-    if args.tee {
-        let expected_preimages = n_entries as f64 / num_hints as f64;
-        if expected_preimages > 48.0 {
-            println!(
-                "\nWarning: Expected {:.1} preimages/hint exceeds safe threshold.",
-                expected_preimages
-            );
-            println!(
-                "         TEE mode may truncate at MAX_PREIMAGES=64, causing incorrect hints."
-            );
-            println!("         Consider increasing num_hints (lambda) or using non-TEE iPRF mode.");
-        }
-    }
-
     Ok(())
 }
 
@@ -419,6 +422,27 @@ mod tests {
 
             xor_32(&mut a, &b);
             prop_assert_eq!(a, expected);
+        }
+
+        #[test]
+        fn xor_32_masked_with_ff_matches_xor_32(
+            mut a in any::<[u8; 32]>(),
+            b in any::<[u8; 32]>(),
+        ) {
+            let mut expected = a;
+            xor_32(&mut expected, &b);
+            xor_32_masked(&mut a, &b, 0xFF);
+            prop_assert_eq!(a, expected);
+        }
+
+        #[test]
+        fn xor_32_masked_with_00_is_noop(
+            mut a in any::<[u8; 32]>(),
+            b in any::<[u8; 32]>(),
+        ) {
+            let original = a;
+            xor_32_masked(&mut a, &b, 0x00);
+            prop_assert_eq!(a, original);
         }
     }
 
