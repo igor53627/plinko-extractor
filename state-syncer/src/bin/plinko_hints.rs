@@ -44,9 +44,6 @@ struct Args {
     #[arg(long, default_value = "false")]
     allow_truncation: bool,
 
-    /// Number of threads (default: all cores)
-    #[arg(short = 't', long)]
-    threads: Option<usize>,
 }
 
 /// Regular hint: P_j subset of c/2+1 blocks, single parity
@@ -113,14 +110,6 @@ fn block_in_subset(blocks: &[usize], block: usize) -> bool {
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
 
-    if let Some(threads) = args.threads {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build_global()
-            .unwrap();
-    }
-    let num_threads = rayon::current_num_threads();
-
     if args.lambda == 0 {
         eprintln!("Error: lambda must be >= 1");
         std::process::exit(1);
@@ -129,7 +118,6 @@ fn main() -> eyre::Result<()> {
     println!("Plinko PIR Hint Generator (Paper-compliant)");
     println!("============================================");
     println!("Database: {:?}", args.db_path);
-    println!("Threads: {}", num_threads);
 
     let file = File::open(&args.db_path)?;
     let file_len = file.metadata()?.len() as usize;
@@ -197,6 +185,10 @@ fn main() -> eyre::Result<()> {
     if total_hints == 0 {
         eprintln!("Error: total hints must be > 0");
         std::process::exit(1);
+    }
+
+    if c < 2 {
+        eprintln!("Warning: c={} is very small; backup hints will have empty subsets", c);
     }
 
     let regular_subset_size = c / 2 + 1;
@@ -267,6 +259,12 @@ fn main() -> eyre::Result<()> {
         })
         .collect();
 
+    // Pre-create iPRF instances for each block (avoids recreating per entry)
+    let block_iprfs: Vec<Iprf> = block_keys
+        .iter()
+        .map(|key| Iprf::new(*key, total_hints as u64, w as u64))
+        .collect();
+
     // Step 4: Stream database and update parities
     println!("[4/4] Streaming database ({} entries)...", n_effective);
     let pb = ProgressBar::new(n_effective as u64);
@@ -286,11 +284,8 @@ fn main() -> eyre::Result<()> {
             .try_into()
             .unwrap();
 
-        // Create iPRF for this block: domain = total_hints, range = w
-        let iprf = Iprf::new(block_keys[block], total_hints as u64, w as u64);
-
         // Find all hints j where iPRF.forward(j) == offset
-        let hint_indices = iprf.inverse(offset as u64);
+        let hint_indices = block_iprfs[block].inverse(offset as u64);
 
         for j in hint_indices {
             let j = j as usize;
@@ -347,26 +342,27 @@ fn main() -> eyre::Result<()> {
         num_regular,
         100.0 * non_zero_regular as f64 / num_regular as f64
     );
-    println!(
-        "Backup hints with non-zero parity_in: {} / {} ({:.1}%)",
-        non_zero_backup_in,
-        num_backup,
-        100.0 * non_zero_backup_in as f64 / num_backup as f64
-    );
-    println!(
-        "Backup hints with non-zero parity_out: {} / {} ({:.1}%)",
-        non_zero_backup_out,
-        num_backup,
-        100.0 * non_zero_backup_out as f64 / num_backup as f64
-    );
+    if num_backup > 0 {
+        println!(
+            "Backup hints with non-zero parity_in: {} / {} ({:.1}%)",
+            non_zero_backup_in,
+            num_backup,
+            100.0 * non_zero_backup_in as f64 / num_backup as f64
+        );
+        println!(
+            "Backup hints with non-zero parity_out: {} / {} ({:.1}%)",
+            non_zero_backup_out,
+            num_backup,
+            100.0 * non_zero_backup_out as f64 / num_backup as f64
+        );
+    }
 
     // Verify iPRF coverage: sum of |inverse(offset)| over all offsets should equal domain (total_hints)
     println!("\nVerifying iPRF coverage...");
     let mut total_preimages = 0usize;
     for block in 0..c.min(10) {
-        let iprf = Iprf::new(block_keys[block], total_hints as u64, w as u64);
         for offset in 0..w {
-            total_preimages += iprf.inverse(offset as u64).len();
+            total_preimages += block_iprfs[block].inverse(offset as u64).len();
         }
     }
     let blocks_checked = c.min(10);
