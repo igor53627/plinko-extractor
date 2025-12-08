@@ -238,22 +238,26 @@ impl IprfTee {
         }
     }
 
-    /// Forward evaluation (same as Iprf - no timing issues in forward direction)
+    /// Forward evaluation - constant-time for valid inputs.
+    ///
+    /// # Precondition
+    /// `x` must be in range `[0, domain)`. This is a precondition, not runtime-checked
+    /// in release builds, to avoid timing side-channels.
     pub fn forward(&self, x: u64) -> u64 {
-        if x >= self.domain {
-            return 0;
-        }
+        debug_assert!(x < self.domain, "IprfTee::forward: x must be < domain");
         let permuted = self.prp.forward(x);
         self.trace_ball(permuted, self.domain, self.range)
     }
 
-    /// Constant-time inverse returning fixed-size array with validity mask
+    /// Constant-time inverse returning fixed-size array with validity mask.
+    ///
+    /// # Precondition
+    /// `y` must be in range `[0, range)`. This is a precondition, not runtime-checked
+    /// in release builds, to avoid timing side-channels.
     pub fn inverse_ct(&self, y: u64) -> ([u64; MAX_PREIMAGES], usize) {
         use crate::constant_time::{ct_lt_u64, ct_select_u64};
 
-        if y >= self.range {
-            return ([0u64; MAX_PREIMAGES], 0);
-        }
+        debug_assert!(y < self.range, "IprfTee::inverse_ct: y must be < range");
 
         let (ball_start, ball_count) = self.trace_ball_inverse_ct(y);
 
@@ -272,7 +276,7 @@ impl IprfTee {
 
     /// Constant-time trace_ball_inverse with fixed iteration count
     fn trace_ball_inverse_ct(&self, y: u64) -> (u64, u64) {
-        use crate::constant_time::{ct_lt_u64, ct_select_u64, ct_le_u64};
+        use crate::constant_time::{ct_le_u64, ct_lt_u64, ct_select_u64};
 
         if self.range == 1 {
             return (0, self.domain);
