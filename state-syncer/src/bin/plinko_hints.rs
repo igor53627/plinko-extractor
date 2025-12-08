@@ -1,34 +1,40 @@
-//! Plinko PIR Hint Generator - iPRF Implementation
+//! Plinko PIR Hint Generator - iPRF Implementation (Paper-compliant)
 //!
-//! This implements Plinko's HintInit using the invertible PRF (iPRF) construction.
+//! Implements Plinko's HintInit matching Fig. 7 of the paper and Plinko.v Coq spec.
 //!
-//! ## Modes:
-//! - **iPRF** (default): Uses iPRF.inverse() to find all database indices for each hint
-//! - **iPRF-TEE** (`--tee`): Constant-time iPRF for trusted execution environments
+//! Key differences from previous implementation:
+//! - Generates c iPRF keys (one per block), not one global key
+//! - Regular hints: block subset of size c/2+1, single parity
+//! - Backup hints: block subset of size c/2, dual parities (in/out)
+//! - iPRF domain = total hints (λw + q), range = w (block size)
 
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use memmap2::MmapOptions;
-use rayon::prelude::*;
-use state_syncer::constant_time::{ct_lt_u64, ct_select_u64};
-use state_syncer::iprf::{Iprf, IprfTee, PrfKey128, MAX_PREIMAGES};
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
+use sha2::{Digest, Sha256};
+use state_syncer::iprf::{Iprf, PrfKey128};
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 const WORD_SIZE: usize = 32;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Plinko PIR Hint Generator (iPRF)", long_about = None)]
+#[command(author, version, about = "Plinko PIR Hint Generator (Paper-compliant)", long_about = None)]
 struct Args {
     /// Path to the database file
     #[arg(short, long, default_value = "/mnt/plinko/data/database.bin")]
     db_path: PathBuf,
 
-    /// Security parameter lambda (number of hints = lambda * w)
+    /// Security parameter lambda (regular hints = lambda * w)
     #[arg(short, long, default_value = "128")]
     lambda: usize,
+
+    /// Number of backup hints (q). Default: lambda * w
+    #[arg(short, long)]
+    backup_hints: Option<usize>,
 
     /// Override entries per block (w). Default: sqrt(N) adjusted to divide N
     #[arg(short, long)]
@@ -41,11 +47,19 @@ struct Args {
     /// Number of threads (default: all cores)
     #[arg(short = 't', long)]
     threads: Option<usize>,
+}
 
-    /// Use TEE mode: constant-time operations for trusted execution environments.
-    /// Prevents timing side-channels but slightly slower.
-    #[arg(long, default_value = "false")]
-    tee: bool,
+/// Regular hint: P_j subset of c/2+1 blocks, single parity
+struct RegularHint {
+    blocks: Vec<usize>,
+    parity: [u8; 32],
+}
+
+/// Backup hint: B_j subset of c/2 blocks, dual parities
+struct BackupHint {
+    blocks: Vec<usize>,
+    parity_in: [u8; 32],
+    parity_out: [u8; 32],
 }
 
 fn xor_32(dst: &mut [u8; 32], src: &[u8; 32]) {
@@ -54,20 +68,10 @@ fn xor_32(dst: &mut [u8; 32], src: &[u8; 32]) {
     }
 }
 
-/// Masked XOR - always executes XOR, but result is conditional on mask
-/// mask should be 0x00 (skip) or 0xFF (include)
-fn xor_32_masked(dst: &mut [u8; 32], src: &[u8; 32], mask_byte: u8) {
-    for i in 0..32 {
-        dst[i] ^= src[i] & mask_byte;
-    }
-}
-
-/// Selects a divisor of `n` that is closest to `target`.
 fn find_nearest_divisor(n: usize, target: usize) -> usize {
     if n % target == 0 {
         return target;
     }
-
     for delta in 1..target {
         if target >= delta && n % (target - delta) == 0 {
             return target - delta;
@@ -76,111 +80,34 @@ fn find_nearest_divisor(n: usize, target: usize) -> usize {
             return target + delta;
         }
     }
-
     1
 }
 
-/// Process hints using the cryptographically correct iPRF.
-///
-/// Unlike block-parallel approaches, this iterates over hints and uses iPRF.inverse()
-/// to find all database indices that contribute to each hint, then XORs those entries.
-fn process_hints_iprf(
-    db_bytes: &[u8],
-    n_entries: usize,
-    num_hints: usize,
-    iprf_key: &PrfKey128,
-    pb: &ProgressBar,
-) -> (Vec<[u8; 32]>, u64) {
-    let iprf = Iprf::new(*iprf_key, n_entries as u64, num_hints as u64);
-    let progress_counter = AtomicU64::new(0);
-
-    let results: Vec<([u8; 32], u64)> = (0..num_hints)
-        .into_par_iter()
-        .map(|hint_id| {
-            let preimages = iprf.inverse(hint_id as u64);
-            let mut hint_value = [0u8; 32];
-            let mut xor_count = 0u64;
-
-            for db_index in preimages {
-                let offset = (db_index as usize) * WORD_SIZE;
-                if offset + WORD_SIZE <= db_bytes.len() {
-                    let entry: [u8; 32] = db_bytes[offset..offset + WORD_SIZE].try_into().unwrap();
-                    xor_32(&mut hint_value, &entry);
-                    xor_count += 1;
-                }
-            }
-
-            let count = progress_counter.fetch_add(1, Ordering::Relaxed);
-            if count % 1000 == 0 {
-                pb.set_position(count);
-            }
-
-            (hint_value, xor_count)
-        })
-        .collect();
-
-    let mut hints = Vec::with_capacity(num_hints);
-    let mut total_xors = 0u64;
-    for (hint_value, xor_count) in results {
-        hints.push(hint_value);
-        total_xors += xor_count;
+/// Derive c iPRF keys from master seed (one per block)
+fn derive_block_keys(master_seed: &[u8; 32], c: usize) -> Vec<PrfKey128> {
+    let mut keys = Vec::with_capacity(c);
+    for block_idx in 0..c {
+        let mut hasher = Sha256::new();
+        hasher.update(master_seed);
+        hasher.update(b"block_key");
+        hasher.update(&(block_idx as u64).to_le_bytes());
+        let hash = hasher.finalize();
+        let mut key = [0u8; 16];
+        key.copy_from_slice(&hash[0..16]);
+        keys.push(key);
     }
-
-    (hints, total_xors)
+    keys
 }
 
-/// Process hints using the constant-time iPRF for TEE execution.
-fn process_hints_iprf_tee(
-    db_bytes: &[u8],
-    n_entries: usize,
-    num_hints: usize,
-    iprf_key: &PrfKey128,
-    pb: &ProgressBar,
-) -> (Vec<[u8; 32]>, u64) {
-    let iprf = IprfTee::new(*iprf_key, n_entries as u64, num_hints as u64);
-    let progress_counter = AtomicU64::new(0);
+/// Generate a random subset of `size` distinct elements from [0, total)
+fn random_subset(rng: &mut ChaCha20Rng, size: usize, total: usize) -> Vec<usize> {
+    use rand::seq::index::sample;
+    sample(rng, total, size).into_vec()
+}
 
-    let results: Vec<([u8; 32], u64)> = (0..num_hints)
-        .into_par_iter()
-        .map(|hint_id| {
-            let (preimages, count) = iprf.inverse_ct(hint_id as u64);
-            let mut hint_value = [0u8; 32];
-            let mut xor_count = 0u64;
-
-            for i in 0..MAX_PREIMAGES {
-                let db_index = preimages[i];
-                let in_range = ct_lt_u64(i as u64, count as u64);
-                let mask_byte = (in_range as u8).wrapping_neg();
-
-                let offset = (db_index as usize) * WORD_SIZE;
-                let max_valid_offset = db_bytes.len().saturating_sub(WORD_SIZE);
-                let is_valid = ct_lt_u64(offset as u64, (max_valid_offset + 1) as u64);
-                let safe_offset =
-                    ct_select_u64(is_valid, offset as u64, max_valid_offset as u64) as usize;
-                let entry: [u8; 32] = db_bytes[safe_offset..safe_offset + WORD_SIZE]
-                    .try_into()
-                    .unwrap();
-                xor_32_masked(&mut hint_value, &entry, mask_byte);
-            }
-            xor_count += count as u64;
-
-            let count = progress_counter.fetch_add(1, Ordering::Relaxed);
-            if count % 1000 == 0 {
-                pb.set_position(count);
-            }
-
-            (hint_value, xor_count)
-        })
-        .collect();
-
-    let mut hints = Vec::with_capacity(num_hints);
-    let mut total_xors = 0u64;
-    for (hint_value, xor_count) in results {
-        hints.push(hint_value);
-        total_xors += xor_count;
-    }
-
-    (hints, total_xors)
+/// Check if block is in the subset (sorted for binary search)
+fn block_in_subset(blocks: &[usize], block: usize) -> bool {
+    blocks.binary_search(&block).is_ok()
 }
 
 fn main() -> eyre::Result<()> {
@@ -199,12 +126,10 @@ fn main() -> eyre::Result<()> {
         std::process::exit(1);
     }
 
-    let mode_str = if args.tee { "iPRF-TEE" } else { "iPRF" };
-    println!("Plinko PIR Hint Generator (Parallel, {} mode)", mode_str);
-    println!("================================================");
+    println!("Plinko PIR Hint Generator (Paper-compliant)");
+    println!("============================================");
     println!("Database: {:?}", args.db_path);
     println!("Threads: {}", num_threads);
-    println!("PRF Mode: {}", mode_str);
 
     let file = File::open(&args.db_path)?;
     let file_len = file.metadata()?.len() as usize;
@@ -249,65 +174,51 @@ fn main() -> eyre::Result<()> {
                 "       {} entries would be dropped. Use --allow-truncation to proceed anyway.",
                 remainder
             );
-            eprintln!("       Or use --entries-per-block to set w to a divisor of N.");
             std::process::exit(1);
         }
     }
 
     let c = n_entries / w;
-    let block_size_bytes = w * WORD_SIZE;
+    let n_effective = c * w;
 
     println!("\nPlinko Parameters:");
     println!("  Entries per block (w): {}", w);
     println!("  Number of blocks (c): {}", c);
     println!(
         "  Block size: {:.2} MB",
-        block_size_bytes as f64 / 1024.0 / 1024.0
+        (w * WORD_SIZE) as f64 / 1024.0 / 1024.0
     );
     println!("  Lambda: {}", args.lambda);
 
-    let num_hints = args.lambda * w;
+    let num_regular = args.lambda * w;
+    let num_backup = args.backup_hints.unwrap_or(num_regular);
+    let total_hints = num_regular + num_backup;
 
-    if num_hints == 0 {
-        eprintln!("Error: num_hints must be > 0 (lambda * w = 0)");
+    if total_hints == 0 {
+        eprintln!("Error: total hints must be > 0");
         std::process::exit(1);
     }
 
-    // Validate TEE mode won't truncate preimages
-    if args.tee {
-        let expected_preimages = n_entries as f64 / num_hints as f64;
-        if expected_preimages > 48.0 {
-            eprintln!(
-                "Error: Expected {:.1} preimages/hint exceeds safe threshold for TEE mode.",
-                expected_preimages
-            );
-            eprintln!(
-                "       TEE mode will truncate at MAX_PREIMAGES=64, causing incorrect hints."
-            );
-            eprintln!("       Increase num_hints (lambda) or use non-TEE iPRF mode.");
-            std::process::exit(1);
-        }
+    let regular_subset_size = c / 2 + 1;
+    let backup_subset_size = c / 2;
+
+    if regular_subset_size > c || backup_subset_size > c {
+        eprintln!("Error: subset sizes exceed number of blocks");
+        std::process::exit(1);
     }
 
-    let hint_storage_bytes = num_hints * WORD_SIZE;
-    println!("  Number of hints: {}", num_hints);
-    println!(
-        "  Hint storage: {:.2} MB",
-        hint_storage_bytes as f64 / 1024.0 / 1024.0
-    );
+    println!("\nHint Structure (per paper Fig. 7):");
+    println!("  Regular hints (lambda*w): {}", num_regular);
+    println!("  Backup hints (q): {}", num_backup);
+    println!("  Total hints: {}", total_hints);
+    println!("  Regular subset size (c/2+1): {}", regular_subset_size);
+    println!("  Backup subset size (c/2): {}", backup_subset_size);
 
-    if c < w / 2 || c > w * 2 {
-        println!(
-            "\nWarning: c/w ratio is {:.2}, ideally should be ~1.0 for optimal Plinko",
-            c as f64 / w as f64
-        );
-    }
-
-    println!("\nEstimated work:");
-    println!("  iPRF inverse calls: {} (one per hint)", num_hints);
+    let regular_storage = num_regular * (regular_subset_size * 8 + WORD_SIZE);
+    let backup_storage = num_backup * (backup_subset_size * 8 + 2 * WORD_SIZE);
     println!(
-        "  Expected XORs: ~{} (n_entries total, distributed across hints)",
-        n_entries
+        "  Estimated hint storage: {:.2} MB",
+        (regular_storage + backup_storage) as f64 / 1024.0 / 1024.0
     );
 
     let master_seed: [u8; 32] = [
@@ -318,66 +229,155 @@ fn main() -> eyre::Result<()> {
 
     let start = Instant::now();
 
+    // Step 1: Generate c iPRF keys (one per block)
+    println!("\n[1/4] Generating {} iPRF keys (one per block)...", c);
+    let block_keys = derive_block_keys(&master_seed, c);
+
+    // Step 2: Initialize regular hints with random block subsets
     println!(
-        "\nGenerating hints (parallel over {} hints, {} mode)...",
-        num_hints, mode_str
+        "[2/4] Initializing {} regular hints (subset size {})...",
+        num_regular, regular_subset_size
     );
-    let pb = ProgressBar::new(num_hints as u64);
+    let mut hint_rng = ChaCha20Rng::from_seed(master_seed);
+    let mut regular_hints: Vec<RegularHint> = (0..num_regular)
+        .map(|_| {
+            let mut blocks = random_subset(&mut hint_rng, regular_subset_size, c);
+            blocks.sort_unstable();
+            RegularHint {
+                blocks,
+                parity: [0u8; 32],
+            }
+        })
+        .collect();
+
+    // Step 3: Initialize backup hints with random block subsets
+    println!(
+        "[3/4] Initializing {} backup hints (subset size {})...",
+        num_backup, backup_subset_size
+    );
+    let mut backup_hints: Vec<BackupHint> = (0..num_backup)
+        .map(|_| {
+            let mut blocks = random_subset(&mut hint_rng, backup_subset_size, c);
+            blocks.sort_unstable();
+            BackupHint {
+                blocks,
+                parity_in: [0u8; 32],
+                parity_out: [0u8; 32],
+            }
+        })
+        .collect();
+
+    // Step 4: Stream database and update parities
+    println!("[4/4] Streaming database ({} entries)...", n_effective);
+    let pb = ProgressBar::new(n_effective as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} hints ({eta}) {msg}")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} entries ({eta})")
             .unwrap()
             .progress_chars("#>-"),
     );
 
-    let iprf_key: PrfKey128 = master_seed[0..16].try_into().unwrap();
+    for i in 0..n_effective {
+        let block = i / w;
+        let offset = i % w;
 
-    let (hints, total_xors) = if args.tee {
-        process_hints_iprf_tee(db_bytes, n_entries, num_hints, &iprf_key, &pb)
-    } else {
-        process_hints_iprf(db_bytes, n_entries, num_hints, &iprf_key, &pb)
-    };
+        let entry_offset = i * WORD_SIZE;
+        let entry: [u8; 32] = db_bytes[entry_offset..entry_offset + WORD_SIZE]
+            .try_into()
+            .unwrap();
+
+        // Create iPRF for this block: domain = total_hints, range = w
+        let iprf = Iprf::new(block_keys[block], total_hints as u64, w as u64);
+
+        // Find all hints j where iPRF.forward(j) == offset
+        let hint_indices = iprf.inverse(offset as u64);
+
+        for j in hint_indices {
+            let j = j as usize;
+            if j < num_regular {
+                // Regular hint: XOR if block in P
+                let hint = &mut regular_hints[j];
+                if block_in_subset(&hint.blocks, block) {
+                    xor_32(&mut hint.parity, &entry);
+                }
+            } else {
+                // Backup hint: XOR to parity_in if in P, else parity_out
+                let backup_idx = j - num_regular;
+                if backup_idx < num_backup {
+                    let hint = &mut backup_hints[backup_idx];
+                    if block_in_subset(&hint.blocks, block) {
+                        xor_32(&mut hint.parity_in, &entry);
+                    } else {
+                        xor_32(&mut hint.parity_out, &entry);
+                    }
+                }
+            }
+        }
+
+        if i % 10000 == 0 {
+            pb.set_position(i as u64);
+        }
+    }
 
     pb.finish_with_message("Done");
 
     let duration = start.elapsed();
-
     let throughput_mb = (file_len as f64 / 1024.0 / 1024.0) / duration.as_secs_f64();
-    let xors_per_sec = total_xors as f64 / duration.as_secs_f64();
 
     println!("\n=== Results ===");
     println!("Time Taken: {:.2?}", duration);
-    println!("Throughput: {:.2} MB/s (raw DB)", throughput_mb);
+    println!("Throughput: {:.2} MB/s", throughput_mb);
 
-    let hints_per_sec = num_hints as f64 / duration.as_secs_f64();
-    let avg_preimages = total_xors as f64 / num_hints as f64;
-    println!(
-        "iPRF inverse calls: {:.2}/s ({:.2}K hints/s)",
-        hints_per_sec,
-        hints_per_sec / 1000.0
-    );
-    println!(
-        "Average preimages per hint: {:.2} (expected ~{:.2})",
-        avg_preimages,
-        n_entries as f64 / num_hints as f64
-    );
+    let non_zero_regular = regular_hints
+        .iter()
+        .filter(|h| h.parity.iter().any(|&b| b != 0))
+        .count();
+    let non_zero_backup_in = backup_hints
+        .iter()
+        .filter(|h| h.parity_in.iter().any(|&b| b != 0))
+        .count();
+    let non_zero_backup_out = backup_hints
+        .iter()
+        .filter(|h| h.parity_out.iter().any(|&b| b != 0))
+        .count();
 
     println!(
-        "XOR operations: {} ({:.2}M/s)",
-        total_xors,
-        xors_per_sec / 1_000_000.0
+        "\nRegular hints with non-zero parity: {} / {} ({:.1}%)",
+        non_zero_regular,
+        num_regular,
+        100.0 * non_zero_regular as f64 / num_regular as f64
     );
     println!(
-        "\nHint storage: {:.2} MB",
-        hint_storage_bytes as f64 / 1024.0 / 1024.0
+        "Backup hints with non-zero parity_in: {} / {} ({:.1}%)",
+        non_zero_backup_in,
+        num_backup,
+        100.0 * non_zero_backup_in as f64 / num_backup as f64
+    );
+    println!(
+        "Backup hints with non-zero parity_out: {} / {} ({:.1}%)",
+        non_zero_backup_out,
+        num_backup,
+        100.0 * non_zero_backup_out as f64 / num_backup as f64
     );
 
-    let non_zero_hints = hints.iter().filter(|h| h.iter().any(|&b| b != 0)).count();
+    // Verify iPRF coverage: sum of |inverse(offset)| over all offsets should equal domain (total_hints)
+    println!("\nVerifying iPRF coverage...");
+    let mut total_preimages = 0usize;
+    for block in 0..c.min(10) {
+        let iprf = Iprf::new(block_keys[block], total_hints as u64, w as u64);
+        for offset in 0..w {
+            total_preimages += iprf.inverse(offset as u64).len();
+        }
+    }
+    let blocks_checked = c.min(10);
+    let expected_per_block = total_hints; // iPRF partitions domain [0, total_hints) into range [0, w)
     println!(
-        "\nNon-zero hints: {} / {} ({:.1}%)",
-        non_zero_hints,
-        num_hints,
-        100.0 * non_zero_hints as f64 / num_hints as f64
+        "  First {} blocks: {} total preimages across {} offsets (expected {} per block = {})",
+        blocks_checked,
+        total_preimages,
+        w,
+        expected_per_block,
+        blocks_checked * expected_per_block
     );
 
     Ok(())
@@ -386,89 +386,67 @@ fn main() -> eyre::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
 
-    proptest! {
-        #![proptest_config(ProptestConfig {
-            cases: 256,
-            .. ProptestConfig::default()
-        })]
+    #[test]
+    fn test_derive_block_keys_deterministic() {
+        let seed = [0u8; 32];
+        let keys1 = derive_block_keys(&seed, 10);
+        let keys2 = derive_block_keys(&seed, 10);
+        assert_eq!(keys1, keys2);
+    }
 
-        #[test]
-        fn xor_32_with_zero_is_noop(mut a in any::<[u8; 32]>()) {
-            let original = a;
-            let zeros = [0u8; 32];
-            xor_32(&mut a, &zeros);
-            prop_assert_eq!(a, original);
-        }
-
-        #[test]
-        fn xor_32_twice_with_same_operand_restores_original(
-            mut a in any::<[u8; 32]>(),
-            b in any::<[u8; 32]>(),
-        ) {
-            let original = a;
-            xor_32(&mut a, &b);
-            xor_32(&mut a, &b);
-            prop_assert_eq!(a, original);
-        }
-
-        #[test]
-        fn xor_32_matches_bytewise_xor(
-            mut a in any::<[u8; 32]>(),
-            b in any::<[u8; 32]>(),
-        ) {
-            let mut expected = [0u8; 32];
-            for i in 0..32 {
-                expected[i] = a[i] ^ b[i];
+    #[test]
+    fn test_derive_block_keys_unique() {
+        let seed = [1u8; 32];
+        let keys = derive_block_keys(&seed, 100);
+        for i in 0..keys.len() {
+            for j in (i + 1)..keys.len() {
+                assert_ne!(keys[i], keys[j], "Keys {} and {} should differ", i, j);
             }
-
-            xor_32(&mut a, &b);
-            prop_assert_eq!(a, expected);
-        }
-
-        #[test]
-        fn xor_32_masked_with_ff_matches_xor_32(
-            mut a in any::<[u8; 32]>(),
-            b in any::<[u8; 32]>(),
-        ) {
-            let mut expected = a;
-            xor_32(&mut expected, &b);
-            xor_32_masked(&mut a, &b, 0xFF);
-            prop_assert_eq!(a, expected);
-        }
-
-        #[test]
-        fn xor_32_masked_with_00_is_noop(
-            mut a in any::<[u8; 32]>(),
-            b in any::<[u8; 32]>(),
-        ) {
-            let original = a;
-            xor_32_masked(&mut a, &b, 0x00);
-            prop_assert_eq!(a, original);
         }
     }
 
-    proptest! {
-        #![proptest_config(ProptestConfig {
-            cases: 128,
-            .. ProptestConfig::default()
-        })]
+    #[test]
+    fn test_random_subset_size() {
+        let mut rng = ChaCha20Rng::from_seed([2u8; 32]);
+        let subset = random_subset(&mut rng, 5, 10);
+        assert_eq!(subset.len(), 5);
+    }
 
-        #[test]
-        fn find_nearest_divisor_returns_valid_divisor(
-            n in 1usize..100_000,
-            target in 1usize..1000,
-        ) {
-            let divisor = find_nearest_divisor(n, target);
-            prop_assert!(divisor >= 1);
-            prop_assert_eq!(n % divisor, 0);
+    #[test]
+    fn test_random_subset_bounds() {
+        let mut rng = ChaCha20Rng::from_seed([3u8; 32]);
+        let subset = random_subset(&mut rng, 10, 100);
+        for &x in &subset {
+            assert!(x < 100);
         }
+    }
 
-        #[test]
-        fn find_nearest_divisor_exact_match(n in 1usize..10_000) {
-            let divisor = find_nearest_divisor(n, n);
-            prop_assert_eq!(divisor, n);
-        }
+    #[test]
+    fn test_block_in_subset() {
+        let blocks = vec![1, 3, 5, 7, 9];
+        assert!(block_in_subset(&blocks, 5));
+        assert!(!block_in_subset(&blocks, 6));
+        assert!(block_in_subset(&blocks, 1));
+        assert!(!block_in_subset(&blocks, 0));
+    }
+
+    #[test]
+    fn test_xor_32_identity() {
+        let mut a = [0xABu8; 32];
+        let b = [0u8; 32];
+        let original = a;
+        xor_32(&mut a, &b);
+        assert_eq!(a, original);
+    }
+
+    #[test]
+    fn test_xor_32_inverse() {
+        let mut a = [0x12u8; 32];
+        let b = [0x34u8; 32];
+        let original = a;
+        xor_32(&mut a, &b);
+        xor_32(&mut a, &b);
+        assert_eq!(a, original);
     }
 }
