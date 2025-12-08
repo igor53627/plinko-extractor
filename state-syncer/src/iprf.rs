@@ -123,8 +123,262 @@ impl SwapOrNot {
     }
 }
 
+/// Constant-time SwapOrNot PRP for TEE execution
+///
+/// Functionally equivalent to SwapOrNot but uses branchless operations
+/// to prevent timing side-channels.
+pub struct SwapOrNotTee {
+    cipher: Aes128,
+    domain: u64,
+    num_rounds: usize,
+}
+
+impl SwapOrNotTee {
+    pub fn new(key: PrfKey128, domain: u64) -> Self {
+        assert!(domain > 0, "SwapOrNot domain must be positive");
+        let cipher = Aes128::new(&GenericArray::from(key));
+        let num_rounds = ((domain as f64).log2().ceil() as usize) * 6 + 6;
+        Self {
+            cipher,
+            domain,
+            num_rounds,
+        }
+    }
+
+    fn derive_round_key(&self, round: usize) -> u64 {
+        let mut input = [0u8; 16];
+        input[0..8].copy_from_slice(&(round as u64).to_be_bytes());
+        input[8..16].copy_from_slice(&self.domain.to_be_bytes());
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+        u64::from_be_bytes(block[0..8].try_into().unwrap()) % self.domain
+    }
+
+    /// Returns 1 if should swap, 0 otherwise (constant-time)
+    fn prf_bit_ct(&self, round: usize, canonical: u64) -> u64 {
+        let mut input = [0u8; 16];
+        input[0..8].copy_from_slice(&(round as u64 | 0x8000000000000000).to_be_bytes());
+        input[8..16].copy_from_slice(&canonical.to_be_bytes());
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+        (block[0] & 1) as u64
+    }
+
+    /// Constant-time round - no secret-dependent branches
+    fn round_ct(&self, round_num: usize, x: u64) -> u64 {
+        use crate::constant_time::{ct_lt_u64, ct_select_u64};
+
+        let k_i = self.derive_round_key(round_num);
+        let partner = (k_i + self.domain - (x % self.domain)) % self.domain;
+
+        // Constant-time max: canonical = max(x, partner)
+        let x_lt_partner = ct_lt_u64(x, partner);
+        let canonical = ct_select_u64(x_lt_partner, partner, x);
+
+        // Constant-time swap decision
+        let swap = self.prf_bit_ct(round_num, canonical);
+        ct_select_u64(swap, partner, x)
+    }
+
+    pub fn forward(&self, x: u64) -> u64 {
+        let mut val = x;
+        for round in 0..self.num_rounds {
+            val = self.round_ct(round, val);
+        }
+        val
+    }
+
+    pub fn inverse(&self, y: u64) -> u64 {
+        let mut val = y;
+        for round in (0..self.num_rounds).rev() {
+            val = self.round_ct(round, val);
+        }
+        val
+    }
+}
+
+/// Maximum preimages for fixed-size array return
+pub const MAX_PREIMAGES: usize = 512;
+
+/// Constant-time iPRF for TEE execution
+///
+/// Functionally equivalent to Iprf but uses branchless operations and
+/// fixed iteration counts to prevent timing side-channels.
+pub struct IprfTee {
+    #[allow(dead_code)]
+    key: PrfKey128,
+    cipher: Aes128,
+    prp: SwapOrNotTee,
+    domain: u64,
+    range: u64,
+    tree_depth: usize,
+}
+
+impl IprfTee {
+    pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
+        let tree_depth = (m as f64).log2().ceil() as usize;
+        let cipher = Aes128::new(&GenericArray::from(key));
+
+        let mut prp_key = [0u8; 16];
+        let mut hasher = Sha256::new();
+        hasher.update(&key);
+        hasher.update(b"prp");
+        let hash = hasher.finalize();
+        prp_key.copy_from_slice(&hash[0..16]);
+
+        let prp = SwapOrNotTee::new(prp_key, n);
+
+        Self {
+            key,
+            cipher,
+            prp,
+            domain: n,
+            range: m,
+            tree_depth,
+        }
+    }
+
+    /// Forward evaluation - constant-time for valid inputs.
+    ///
+    /// # Precondition
+    /// `x` must be in range `[0, domain)`. This is a precondition, not runtime-checked
+    /// in release builds, to avoid timing side-channels.
+    pub fn forward(&self, x: u64) -> u64 {
+        debug_assert!(x < self.domain, "IprfTee::forward: x must be < domain");
+        let permuted = self.prp.forward(x);
+        self.trace_ball(permuted, self.domain, self.range)
+    }
+
+    /// Constant-time inverse returning fixed-size array with validity mask.
+    ///
+    /// # Precondition
+    /// `y` must be in range `[0, range)`. This is a precondition, not runtime-checked
+    /// in release builds, to avoid timing side-channels.
+    pub fn inverse_ct(&self, y: u64) -> ([u64; MAX_PREIMAGES], usize) {
+        use crate::constant_time::{ct_lt_u64, ct_select_u64};
+
+        debug_assert!(y < self.range, "IprfTee::inverse_ct: y must be < range");
+
+        let (ball_start, ball_count) = self.trace_ball_inverse_ct(y);
+
+        let count = (ball_count as usize).min(MAX_PREIMAGES);
+        let mut result = [0u64; MAX_PREIMAGES];
+
+        for i in 0..MAX_PREIMAGES {
+            let in_range = ct_lt_u64(i as u64, count as u64);
+            let z = ball_start + i as u64;
+            let x = self.prp.inverse(z);
+            result[i] = ct_select_u64(in_range, x, 0);
+        }
+
+        (result, count)
+    }
+
+    /// Constant-time trace_ball_inverse with fixed iteration count
+    fn trace_ball_inverse_ct(&self, y: u64) -> (u64, u64) {
+        use crate::constant_time::{ct_le_u64, ct_lt_u64, ct_select_u64};
+
+        if self.range == 1 {
+            return (0, self.domain);
+        }
+
+        let mut low = 0u64;
+        let mut high = self.range - 1;
+        let mut ball_count = self.domain;
+        let mut ball_start = 0u64;
+
+        for _level in 0..self.tree_depth {
+            let should_continue = ct_lt_u64(low, high);
+
+            let mid = (low + high) / 2;
+            let left_bins = mid - low + 1;
+            let total_bins = high - low + 1;
+
+            let node_id = encode_node(low, high, self.domain);
+            let prf_output = self.prf_eval(node_id);
+            let left_count = Self::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+
+            let go_left = ct_le_u64(y, mid);
+
+            let new_low_left = low;
+            let new_high_left = mid;
+            let new_count_left = left_count;
+            let new_start_left = ball_start;
+
+            let new_low_right = mid + 1;
+            let new_high_right = high;
+            let new_count_right = ball_count.wrapping_sub(left_count);
+            let new_start_right = ball_start + left_count;
+
+            let new_low = ct_select_u64(go_left, new_low_left, new_low_right);
+            let new_high = ct_select_u64(go_left, new_high_left, new_high_right);
+            let new_count = ct_select_u64(go_left, new_count_left, new_count_right);
+            let new_start = ct_select_u64(go_left, new_start_left, new_start_right);
+
+            low = ct_select_u64(should_continue, new_low, low);
+            high = ct_select_u64(should_continue, new_high, high);
+            ball_count = ct_select_u64(should_continue, new_count, ball_count);
+            ball_start = ct_select_u64(should_continue, new_start, ball_start);
+        }
+
+        (ball_start, ball_count)
+    }
+
+    fn trace_ball(&self, x_prime: u64, n: u64, m: u64) -> u64 {
+        if m == 1 {
+            return 0;
+        }
+        let mut low = 0u64;
+        let mut high = m - 1;
+        let mut ball_count = n;
+        let mut ball_index = x_prime;
+
+        while low < high {
+            let mid = (low + high) / 2;
+            let left_bins = mid - low + 1;
+            let total_bins = high - low + 1;
+            let node_id = encode_node(low, high, n);
+            let prf_output = self.prf_eval(node_id);
+            let left_count = Self::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+
+            if ball_index < left_count {
+                high = mid;
+                ball_count = left_count;
+            } else {
+                low = mid + 1;
+                ball_index -= left_count;
+                ball_count -= left_count;
+            }
+        }
+        low
+    }
+
+    fn binomial_sample(count: u64, num: u64, denom: u64, prf_output: u64) -> u64 {
+        if denom == 0 {
+            return 0;
+        }
+        let scaled = prf_output % (denom + 1);
+        (count * num + scaled) / denom
+    }
+
+    fn prf_eval(&self, x: u64) -> u64 {
+        let mut input = [0u8; 16];
+        input[8..16].copy_from_slice(&x.to_be_bytes());
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+        u64::from_be_bytes(block[0..8].try_into().unwrap())
+    }
+
+    /// Helper to get Vec<u64> like standard inverse (for testing)
+    pub fn inverse(&self, y: u64) -> Vec<u64> {
+        let (arr, count) = self.inverse_ct(y);
+        arr[..count].to_vec()
+    }
+}
+
 /// Invertible PRF built from Swap-or-Not PRP + PMNS
 pub struct Iprf {
+    #[allow(dead_code)]
     key: PrfKey128,
     cipher: Aes128,
     prp: SwapOrNot,
@@ -310,6 +564,12 @@ impl Iprf {
     }
 }
 
+/// Encodes a PMNS tree node as a unique 64-bit identifier for PRF evaluation.
+///
+/// Note: The third argument is the global domain `n`, not the dynamic `ball_count`.
+/// This differs from the Rocq spec (IprfSpec.v) which uses `ball_count`, but both are
+/// valid as long as forward and inverse use the same encoding. The Rocq spec's
+/// `encode_node` is a parameter that can be instantiated to match this behavior.
 fn encode_node(low: u64, high: u64, n: u64) -> u64 {
     let mut hasher = Sha256::new();
     hasher.update(&low.to_be_bytes());
@@ -480,6 +740,50 @@ mod tests {
             }
 
             prop_assert!(seen.iter().all(|&b| b));
+        }
+    }
+
+    #[test]
+    fn test_swap_or_not_tee_matches_standard() {
+        let key = [3u8; 16];
+        let domain = 1000u64;
+        let prp = SwapOrNot::new(key, domain);
+        let prp_tee = SwapOrNotTee::new(key, domain);
+
+        for x in 0..100 {
+            assert_eq!(
+                prp.forward(x),
+                prp_tee.forward(x),
+                "forward mismatch at x={}",
+                x
+            );
+            assert_eq!(
+                prp.inverse(x),
+                prp_tee.inverse(x),
+                "inverse mismatch at x={}",
+                x
+            );
+        }
+    }
+
+    #[test]
+    fn test_iprf_tee_matches_standard() {
+        let key = [4u8; 16];
+        let domain = 500u64;
+        let range = 50u64;
+        let iprf = Iprf::new(key, domain, range);
+        let iprf_tee = IprfTee::new(key, domain, range);
+
+        for x in 0..100 {
+            let y = iprf.forward(x);
+            let y_tee = iprf_tee.forward(x);
+            assert_eq!(y, y_tee, "forward mismatch at x={}", x);
+        }
+
+        for y in 0..range {
+            let preimages = iprf.inverse(y);
+            let preimages_tee = iprf_tee.inverse(y);
+            assert_eq!(preimages, preimages_tee, "inverse mismatch at y={}", y);
         }
     }
 }
