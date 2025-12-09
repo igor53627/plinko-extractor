@@ -39,7 +39,10 @@ mod kani_harnesses {
         // The true binomial sampler also returns 0 for denom=0
         kani::assume(count == 0 || num == 0);
         let result = crate::binomial::binomial_sample(count, num, 1, prf_output);
-        kani::assert(result == 0, "binomial_sample with count=0 or num=0 must return 0");
+        kani::assert(
+            result == 0,
+            "binomial_sample with count=0 or num=0 must return 0",
+        );
     }
 
     // =========================================================================

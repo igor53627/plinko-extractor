@@ -296,7 +296,8 @@ impl IprfTee {
 
             let node_id = encode_node(low, high, self.domain);
             let prf_output = self.prf_eval(node_id);
-            let left_count = crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             let go_left = ct_le_u64(y, mid);
 
@@ -339,7 +340,8 @@ impl IprfTee {
             let total_bins = high - low + 1;
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
-            let left_count = crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             if ball_index < left_count {
                 high = mid;
@@ -460,7 +462,8 @@ impl Iprf {
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
 
-            let left_count = crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             if ball_index < left_count {
                 high = mid;
@@ -509,7 +512,8 @@ impl Iprf {
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
 
-            let left_count = crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             if y <= mid {
                 high = mid;

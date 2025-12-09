@@ -71,7 +71,7 @@ pub fn binomial_sample(count: u64, num: u64, denom: u64, prf_output: u64) -> u64
 }
 
 /// Exact inverse-CDF for small count using PMF recurrence.
-/// 
+///
 /// Complexity: O(count)
 fn binomial_inverse_exact(n: u64, p: f64, u: f64) -> u64 {
     let q = 1.0 - p;
