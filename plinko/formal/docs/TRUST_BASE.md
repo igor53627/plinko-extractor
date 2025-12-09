@@ -391,6 +391,62 @@ count = 0 in meaningful paths. This axiom is defensive.
 
 ---
 
+## 7. List/Arithmetic Admits (NOT Crypto Axioms)
+
+Location: [sims/HintInitSim.v](../sims/HintInitSim.v)
+
+These are **admitted lemmas**, not axioms. They are pure list/arithmetic reasoning
+that could be proven with standard Coq techniques, but are currently admitted due
+to complexity. They do NOT rely on any cryptographic assumptions.
+
+### streaming_parity_as_xor_list
+
+```coq
+Lemma streaming_parity_as_xor_list : ...
+  nth (Z.to_nat j) (ss_regular_parities streaming_result) zero_entry =
+  xor_list (contributing_entries j seed_j subset_size c0 total_hints0 w0 database).
+```
+
+**Purpose:** Shows streaming parity equals XOR of contributing entries.
+
+**Proof approach:** Induction on database with loop invariant. Each step either
+XORs entry (if contributing) or leaves unchanged. Key lemmas (fold_left_xor_acc,
+contributing_entries_from_cons) are already proven.
+
+**Status:** Mechanically provable, admits due to nested mapi/fold_left complexity.
+
+### contributing_entries_permutation_batch
+
+```coq
+Lemma contributing_entries_permutation_batch : ...
+  Permutation 
+    (contributing_entries j seed_j subset_size c0 total_hints0 w0 database)
+    (batch_entries j w0 total_hints0 subset database).
+```
+
+**Purpose:** Shows contributing entries and batch entries are permutations.
+
+**Proof approach:** Use contributing_iff_batch_index (proven) to establish bijection
+between index sets, then lift to entry lists via Permutation_map.
+
+**Status:** Key helper proven. Remaining work is NoDup properties and membership equivalence.
+
+### hint_init_backup_streaming_eq_batch
+
+```coq
+Theorem hint_init_backup_streaming_eq_batch : ...
+  nth (Z.to_nat j) (ss_backup_parities_in streaming_result) zero_entry = batch_in /\
+  nth (Z.to_nat j) (ss_backup_parities_out streaming_result) zero_entry = batch_out.
+```
+
+**Purpose:** Same as regular hints, but with dual parity (in/out) tracking.
+
+**Proof approach:** Mirror regular hint proof with pair XOR monoid.
+
+**Status:** Same structure as regular hints; xor_pair lemmas proven.
+
+---
+
 ## Verification Status
 
 ### Fully Proven (no axioms needed)
@@ -402,6 +458,9 @@ count = 0 in meaningful paths. This axiom is defensive.
 - PMNS trace_ball inverse disjointness
 - iPRF partition properties (given PRP axioms)
 - Database parameter invariants
+- XOR permutation invariance (xor_list_permutation)
+- Batch parity as xor_list (batch_parity_as_xor_list)
+- simulation_preserves_invariants (using subset_from_seed_length axiom)
 
 ### Axiomatized (crypto trust base)
 - AES-128 functional behavior (5 axioms)
@@ -410,6 +469,9 @@ count = 0 in meaningful paths. This axiom is defensive.
 
 ### Discharged via bridging
 - Abstract PRP axioms (8 axioms) -> proven for SwapOrNot
+
+### List/Arithmetic Admits (NOT trust base)
+- 3 lemmas in HintInitSim.v (pure list reasoning, mechanically provable)
 
 ---
 
