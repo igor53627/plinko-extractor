@@ -38,16 +38,12 @@ Open Scope Z_scope.
     }.
 *)
 
-(** Validity predicate for SwapOrNot state (extends swapornot_state_valid from SimTypes) *)
-Definition valid_swap_or_not_state (s : SwapOrNotState) : Prop :=
-  son_domain s > 0 /\
-  son_domain s < N /\
-  length (son_key s) = 16%nat /\
-  Forall (fun b => 0 <= b < 256) (son_key s).
-
-(** State refinement: Rust state refines spec parameters *)
+(** State refinement: Rust state refines spec parameters.
+    Uses swapornot_state_valid from SimTypes.v as the canonical validity predicate,
+    plus constraints binding to spec parameters N and num_rounds. *)
 Definition refines_swap_or_not_state (rust_state : SwapOrNotState) : Prop :=
-  valid_swap_or_not_state rust_state /\
+  swapornot_state_valid rust_state /\
+  son_domain rust_state = N /\
   son_num_rounds rust_state = num_rounds.
 
 (** ============================================================================
@@ -119,10 +115,10 @@ Definition rust_derive_round_key (s : SwapOrNotState) (round : nat) : Z :=
 
 (** Round key is in domain range *)
 Lemma rust_derive_round_key_in_range : forall s r,
-  valid_swap_or_not_state s ->
+  swapornot_state_valid s ->
   0 <= rust_derive_round_key s r < son_domain s.
 Proof.
-  intros s r [Hdom_pos [Hdom_lt_N [Hkey_len Hkey_valid]]].
+  intros s r [Hdom_pos [Hrounds [Hkey_len Hkey_valid]]].
   unfold rust_derive_round_key.
   apply Z.mod_pos_bound. lia.
 Qed.
@@ -198,7 +194,7 @@ Definition rust_partner (domain k_i x : Z) : Z :=
 
 (** Partner computation is equivalent to spec *)
 Lemma rust_partner_equiv : forall s k_i x,
-  valid_swap_or_not_state s ->
+  swapornot_state_valid s ->
   son_domain s = N ->
   rust_partner (son_domain s) k_i x = partner k_i x.
 Proof.
@@ -220,22 +216,13 @@ Definition rust_round (s : SwapOrNotState) (r : nat) (x : Z) : Z :=
 (** Single round refinement theorem *)
 Theorem rust_round_refines_spec : forall s r x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_round s r x = round_spec r x.
 Proof.
-  intros s r x Hrefines Hdomain Hx.
+  intros s r x Hrefines Hx.
+  destruct Hrefines as [Hvalid [Hdomain Hnrounds]].
   unfold rust_round, round_spec.
-  (* TODO: Complete proof using round_key_refinement and prf_bit_refinement axioms.
-     Key steps:
-     1. rust_derive_round_key s r = round_key r (by round_key_refinement)
-     2. rust_partner matches partner (by rust_partner_equiv with Hdomain)
-     3. rust_canonical = canonical (by definition)
-     4. rust_prf_bit s r c = round_bit r c (by prf_bit_refinement)
-     
-     Proof requires careful manipulation of domain equality and showing
-     that Z.max x (partner ...) is in range [0, N). *)
-  rewrite round_key_refinement by assumption.
+  rewrite round_key_refinement by (split; [assumption | split; assumption]).
   rewrite Hdomain.
   unfold rust_partner, partner.
   unfold rust_canonical, canonical.
@@ -246,7 +233,7 @@ Proof.
   { lia. }
   rewrite prf_bit_refinement.
   - reflexivity.
-  - assumption.
+  - split; [assumption | split; assumption].
   - exact Hmax_range.
 Qed.
 
@@ -267,12 +254,11 @@ Definition rust_forward (s : SwapOrNotState) (x : Z) : Z :=
 (** Forward rounds refinement *)
 Lemma rust_forward_rounds_refines : forall s n x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_forward_rounds s n x = forward_rounds n x.
 Proof.
   intros s n.
-  induction n as [|n' IH]; intros x Hrefines Hdomain Hx.
+  induction n as [|n' IH]; intros x Hrefines Hx.
   - simpl. reflexivity.
   - simpl.
     rewrite IH by assumption.
@@ -283,17 +269,15 @@ Qed.
 (** Main forward simulation theorem *)
 Theorem rust_forward_refines_spec : forall s x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_forward s x = forward_spec x.
 Proof.
-  intros s x Hrefines Hdomain Hx.
+  intros s x Hrefines Hx.
   unfold rust_forward, forward_spec.
-  destruct Hrefines as [Hvalid Hnrounds].
+  destruct Hrefines as [Hvalid [Hdomain Hnrounds]].
   rewrite Hnrounds.
   apply rust_forward_rounds_refines.
-  - split; assumption.
-  - assumption.
+  - split; [assumption | split; assumption].
   - assumption.
 Qed.
 
@@ -314,12 +298,11 @@ Definition rust_inverse (s : SwapOrNotState) (x : Z) : Z :=
 (** Inverse rounds refinement *)
 Lemma rust_inverse_rounds_refines : forall s n x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_inverse_rounds s n x = inverse_rounds n x.
 Proof.
   intros s n.
-  induction n as [|n' IH]; intros x Hrefines Hdomain Hx.
+  induction n as [|n' IH]; intros x Hrefines Hx.
   - simpl. reflexivity.
   - simpl.
     rewrite rust_round_refines_spec by assumption.
@@ -330,17 +313,15 @@ Qed.
 (** Main inverse simulation theorem *)
 Theorem rust_inverse_refines_spec : forall s x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_inverse s x = inverse_spec x.
 Proof.
-  intros s x Hrefines Hdomain Hx.
+  intros s x Hrefines Hx.
   unfold rust_inverse, inverse_spec.
-  destruct Hrefines as [Hvalid Hnrounds].
+  destruct Hrefines as [Hvalid [Hdomain Hnrounds]].
   rewrite Hnrounds.
   apply rust_inverse_rounds_refines.
-  - split; assumption.
-  - assumption.
+  - split; [assumption | split; assumption].
   - assumption.
 Qed.
 
@@ -354,11 +335,10 @@ Qed.
 (** Rust forward preserves range *)
 Theorem rust_forward_in_range : forall s x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   0 <= rust_forward s x < N.
 Proof.
-  intros s x Hrefines Hdomain Hx.
+  intros s x Hrefines Hx.
   rewrite rust_forward_refines_spec by assumption.
   apply forward_in_range. assumption.
 Qed.
@@ -366,11 +346,10 @@ Qed.
 (** Rust inverse preserves range *)
 Theorem rust_inverse_in_range : forall s x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   0 <= rust_inverse s x < N.
 Proof.
-  intros s x Hrefines Hdomain Hx.
+  intros s x Hrefines Hx.
   rewrite rust_inverse_refines_spec by assumption.
   apply inverse_in_range. assumption.
 Qed.
@@ -378,15 +357,13 @@ Qed.
 (** Rust forward/inverse identity *)
 Theorem rust_forward_inverse_id : forall s x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_inverse s (rust_forward s x) = x.
 Proof.
-  intros s x Hrefines Hdomain Hx.
+  intros s x Hrefines Hx.
   rewrite rust_forward_refines_spec by assumption.
   rewrite rust_inverse_refines_spec.
   - apply forward_inverse_id. assumption.
-  - assumption.
   - assumption.
   - apply forward_in_range. assumption.
 Qed.
@@ -394,15 +371,13 @@ Qed.
 (** Rust inverse/forward identity *)
 Theorem rust_inverse_forward_id : forall s x,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x < N ->
   rust_forward s (rust_inverse s x) = x.
 Proof.
-  intros s x Hrefines Hdomain Hx.
+  intros s x Hrefines Hx.
   rewrite rust_inverse_refines_spec by assumption.
   rewrite rust_forward_refines_spec.
   - apply inverse_forward_id. assumption.
-  - assumption.
   - assumption.
   - apply inverse_in_range. assumption.
 Qed.
@@ -410,12 +385,11 @@ Qed.
 (** Rust forward is injective *)
 Theorem rust_forward_injective : forall s x1 x2,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= x1 < N -> 0 <= x2 < N ->
   rust_forward s x1 = rust_forward s x2 ->
   x1 = x2.
 Proof.
-  intros s x1 x2 Hrefines Hdomain Hx1 Hx2 Heq.
+  intros s x1 x2 Hrefines Hx1 Hx2 Heq.
   rewrite rust_forward_refines_spec in Heq by assumption.
   rewrite rust_forward_refines_spec in Heq by assumption.
   assert (H1 : inverse_spec (forward_spec x1) = x1).
@@ -428,11 +402,10 @@ Qed.
 (** Rust forward is surjective *)
 Theorem rust_forward_surjective : forall s y,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   0 <= y < N ->
   exists x, 0 <= x < N /\ rust_forward s x = y.
 Proof.
-  intros s y Hrefines Hdomain Hy.
+  intros s y Hrefines Hy.
   exists (rust_inverse s y).
   split.
   - apply rust_inverse_in_range; assumption.
@@ -442,13 +415,12 @@ Qed.
 (** Rust forward is a bijection *)
 Theorem rust_forward_is_bijection : forall s,
   refines_swap_or_not_state s ->
-  son_domain s = N ->
   (forall x1 x2, 0 <= x1 < N -> 0 <= x2 < N ->
     rust_forward s x1 = rust_forward s x2 -> x1 = x2) /\
   (forall y, 0 <= y < N -> 
     exists x, 0 <= x < N /\ rust_forward s x = y).
 Proof.
-  intros s Hrefines Hdomain.
+  intros s Hrefines.
   split.
   - intros x1 x2 Hx1 Hx2. apply rust_forward_injective; assumption.
   - intros y Hy. apply rust_forward_surjective; assumption.

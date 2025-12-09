@@ -97,6 +97,10 @@ sims/SwapOrNotSim.vo: specs/CommonTypes.vo specs/SwapOrNotSpec.vo sims/SimTypes.
 sims/IprfSim.vo: sims/SimTypes.vo specs/IprfSpec.vo specs/CommonTypes.vo
 sims/HintInitSim.vo: sims/SimTypes.vo sims/IprfSim.vo specs/IprfSpec.vo specs/CommonTypes.vo
 
+# Explicit dependencies for linking
+linking/types.vo: specs/CommonTypes.vo
+linking/IprfLink.vo: specs/IprfSpec.vo sims/SimTypes.vo sims/IprfSim.vo
+
 # Generate dependencies
 depend:
 	$(COQDEP) $(COQFLAGS) $(ALL_V) > .depend
