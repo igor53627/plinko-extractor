@@ -56,7 +56,12 @@ Definition u64_to_Q (prf_output : Z) : Q :=
 (** ** Inverse CDF specification *)
 
 (** The ideal binomial quantile function:
-    Given u in [0,1), return the smallest k such that CDF(k) >= u *)
+    Given u in [0,1), return the smallest k such that CDF(k) >= u
+    
+    TODO: Fix termination proof. This Fixpoint matches on n but recursive calls
+    pass n (not n') which breaks Coq's structural recursion checker. Either:
+    1. Restructure to make k the decreasing argument, or
+    2. Use Program Fixpoint/Function with measure (n - k) *)
 Fixpoint binom_quantile_aux (n : nat) (num denom : Z) (u : Q) (k : nat) : nat :=
   match n with
   | O => O
@@ -178,7 +183,8 @@ Qed.
     a probability monad or measure theory formalization.
 *)
 
-(** The CDF is non-decreasing *)
+(** The CDF is non-decreasing
+    TODO: Prove by showing PMF terms are non-negative and CDF is a partial sum *)
 Lemma binom_cdf_monotone :
   forall n num denom k1 k2,
     0 <= num < denom ->
@@ -190,7 +196,8 @@ Proof.
   admit.
 Admitted.
 
-(** The CDF reaches 1 at k = n *)
+(** The CDF reaches 1 at k = n
+    TODO: Prove using sum_{k=0}^n binom(n,k)p^k(1-p)^{n-k} = 1 (binomial theorem) *)
 Lemma binom_cdf_complete :
   forall n num denom,
     0 <= num < denom ->

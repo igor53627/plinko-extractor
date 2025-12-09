@@ -28,15 +28,14 @@ mod kani_harnesses {
     // 3. Unit tests in binomial.rs
     // =========================================================================
 
-    /// Proof: edge case - zero denominator returns 0
-    /// This is the only tractable property for Kani since it's a simple branch
+    /// Proof: edge case - zero count or zero num returns 0
+    /// These are tractable properties for Kani since they're simple branches
     #[kani::proof]
-    fn proof_binomial_sample_zero_denom() {
+    fn proof_binomial_sample_zero_inputs() {
         let count: u64 = kani::any();
         let num: u64 = kani::any();
         let prf_output: u64 = kani::any();
 
-        // The true binomial sampler also returns 0 for denom=0
         kani::assume(count == 0 || num == 0);
         let result = crate::binomial::binomial_sample(count, num, 1, prf_output);
         kani::assert(
