@@ -1,0 +1,13 @@
+# Rocq build artifacts
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
+.lia.cache
+.nia.cache
+.depend
+
+# Editor backups
+*~
+*.swp
