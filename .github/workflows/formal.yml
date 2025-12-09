@@ -57,10 +57,10 @@ jobs:
           fi
           # Export opam paths for subsequent steps
           echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
-          # Create compatibility symlinks for coqc -> rocqc
-          ln -sf rocqc /home/runner/.opam/rocq-9/bin/coqc
-          ln -sf rocqdep /home/runner/.opam/rocq-9/bin/coqdep
-          ln -sf rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
+          # Create compatibility symlinks (always, in case cache didn't preserve them)
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Build Rocq specs and proofs
         run: |
@@ -131,10 +131,10 @@ jobs:
           fi
           # Export opam paths for subsequent steps
           echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
-          # Create compatibility symlinks for coqc -> rocqc
-          ln -sf rocqc /home/runner/.opam/rocq-9/bin/coqc
-          ln -sf rocqdep /home/runner/.opam/rocq-9/bin/coqdep
-          ln -sf rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
+          # Create compatibility symlinks (always, in case cache didn't preserve them)
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master
