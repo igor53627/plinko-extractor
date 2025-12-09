@@ -4,7 +4,9 @@
 //! - `iprf`: Invertible PRF implementation (paper §4.2)
 //! - `db`: Database loading and Plinko parameter derivation
 //! - `constant_time`: Data-oblivious operations for TEE execution
+//! - `binomial`: True derandomized binomial sampling for PMNS
 
+pub mod binomial;
 pub mod constant_time;
 pub mod db;
 pub mod iprf;
