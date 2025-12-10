@@ -28,20 +28,24 @@ mod kani_harnesses {
     // 3. Unit tests in binomial.rs
     // =========================================================================
 
-    /// Proof: edge case - zero count or zero num returns 0
-    /// These are tractable properties for Kani since they're simple branches
+    /// Proof: edge case - zero count returns 0
     #[kani::proof]
-    fn proof_binomial_sample_zero_inputs() {
-        let count: u64 = kani::any();
+    fn proof_binomial_sample_zero_count() {
         let num: u64 = kani::any();
         let prf_output: u64 = kani::any();
 
-        kani::assume(count == 0 || num == 0);
-        let result = crate::binomial::binomial_sample(count, num, 1, prf_output);
-        kani::assert(
-            result == 0,
-            "binomial_sample with count=0 or num=0 must return 0",
-        );
+        let result = crate::binomial::binomial_sample(0, num, 1, prf_output);
+        kani::assert(result == 0, "binomial_sample with count=0 must return 0");
+    }
+
+    /// Proof: edge case - zero num returns 0
+    #[kani::proof]
+    fn proof_binomial_sample_zero_num() {
+        let count: u64 = kani::any();
+        let prf_output: u64 = kani::any();
+
+        let result = crate::binomial::binomial_sample(count, 0, 1, prf_output);
+        kani::assert(result == 0, "binomial_sample with num=0 must return 0");
     }
 
     // =========================================================================

@@ -265,7 +265,11 @@ mod tests {
     #[test]
     fn test_symmetry_correctness() {
         let n = 100u64;
-        for i in 0..100u64 {
+        let samples = 1000u64;
+        let mut sum_low: u64 = 0;
+        let mut sum_high: u64 = 0;
+
+        for i in 0..samples {
             let prf = i.wrapping_mul(0x9E3779B97F4A7C15);
 
             let k_low = binomial_sample(n, 1, 4, prf);
@@ -273,10 +277,19 @@ mod tests {
 
             assert!(k_low <= n);
             assert!(k_high <= n);
-            assert!(
-                k_high >= k_low,
-                "p=0.75 should give higher values than p=0.25 on average"
-            );
+
+            sum_low += k_low;
+            sum_high += k_high;
         }
+
+        let mean_low = sum_low as f64 / samples as f64;
+        let mean_high = sum_high as f64 / samples as f64;
+
+        assert!(
+            mean_high > mean_low,
+            "mean for p=0.75 ({}) should exceed mean for p=0.25 ({})",
+            mean_high,
+            mean_low
+        );
     }
 }
