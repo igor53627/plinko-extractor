@@ -204,7 +204,9 @@ fn main() -> eyre::Result<()> {
 
     // Use logical_n_entries (after padding) unless truncation mode (debug only)
     let (mut n_effective, mut pad_entries) = if args.allow_truncation && remainder != 0 {
-        eprintln!("Warning: --allow-truncation is a debug flag that violates security assumptions.");
+        eprintln!(
+            "Warning: --allow-truncation is a debug flag that violates security assumptions."
+        );
         (n_entries - remainder, 0usize)
     } else {
         (logical_n_entries, pad_entries)
