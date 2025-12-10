@@ -3,8 +3,8 @@
 COQC := coqc
 COQDEP := coqdep
 
-# Path to RocqOfRust library
-ROCQOFRUST_PATH := $(HOME)/pse/paradigm/rocq-of-rust/RocqOfRust
+# Path to RocqOfRust library (can be overridden via environment or command line)
+ROCQOFRUST_PATH ?= $(HOME)/rocq-of-rust/RocqOfRust
 
 # Flags for our code (specs, simulations, proofs)
 COQFLAGS := -Q specs Plinko.Specs -Q sims Plinko.Sims -Q proofs Plinko.Proofs
@@ -16,7 +16,7 @@ COQFLAGS_LINKING := -R $(ROCQOFRUST_PATH) RocqOfRust -Q sims Plinko.Sims -Q src 
 COQFLAGS_TRANS := -R $(ROCQOFRUST_PATH) RocqOfRust -Q src src
 
 # Source files
-SPEC_FILES := specs/CommonTypes.v specs/DbSpec.v specs/BinomialSpec.v specs/SwapOrNotSpec.v specs/IprfSpec.v
+SPEC_FILES := specs/CommonTypes.v specs/DbSpec.v specs/BinomialSpec.v specs/TrueBinomialSpec.v specs/SwapOrNotSpec.v specs/IprfSpec.v
 SIM_FILES := $(wildcard sims/*.v)
 PROOF_FILES := $(wildcard proofs/*.v)
 TRANS_FILES := $(wildcard src/*.v)
@@ -81,6 +81,7 @@ linking/%.vo: linking/%.v
 # Explicit dependencies for specs
 specs/DbSpec.vo: specs/CommonTypes.vo
 specs/BinomialSpec.vo: specs/CommonTypes.vo
+specs/TrueBinomialSpec.vo: specs/CommonTypes.vo
 specs/SwapOrNotSpec.vo: specs/CommonTypes.vo
 specs/IprfSpec.vo: specs/CommonTypes.vo specs/BinomialSpec.vo
 

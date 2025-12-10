@@ -3997,6 +3997,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lambert_w"
+version = "1.2.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bf449fa972fa5f9c412c4697dc472bfbf84edbaaeb078d8e42f5889fee41cde"
+dependencies = [
+ "num-complex",
+ "num-traits",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5168,6 +5178,16 @@ dependencies = [
  "bitflags 2.10.0",
  "memchr",
  "unicase",
+]
+
+[[package]]
+name = "puruspe"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69a530540df16fa0cfb1f5a7c26c4d24544a2a9fb94c60831afa776360782d98"
+dependencies = [
+ "lambert_w",
+ "num-complex",
 ]
 
 [[package]]
@@ -8873,6 +8893,7 @@ dependencies = [
  "indicatif",
  "memmap2",
  "proptest",
+ "puruspe",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",

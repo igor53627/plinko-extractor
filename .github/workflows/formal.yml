@@ -1,0 +1,215 @@
+name: Formal Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plinko/formal/**'
+      - 'state-syncer/src/**'
+      - 'state-syncer/Cargo.toml'
+      - 'Cargo.toml'
+      - '.github/workflows/formal.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'plinko/formal/**'
+      - 'state-syncer/src/**'
+      - 'state-syncer/Cargo.toml'
+      - 'Cargo.toml'
+      - '.github/workflows/formal.yml'
+
+env:
+  OPAMYES: 1
+
+jobs:
+  rocq-proofs:
+    name: Rocq Proofs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache opam
+        id: cache-opam
+        uses: actions/cache@v4
+        with:
+          path: ~/.opam
+          key: opam-rocq9-${{ runner.os }}-${{ hashFiles('.github/workflows/formal.yml') }}
+          restore-keys: |
+            opam-rocq9-${{ runner.os }}-
+
+      - name: Install opam and Rocq 9.0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y opam
+          if [ "${{ steps.cache-opam.outputs.cache-hit }}" = "true" ] && [ -d ~/.opam/rocq-9 ]; then
+            echo "Using cached opam switch"
+            opam init --auto-setup --disable-sandboxing --bare || true
+          else
+            echo "Building fresh opam switch"
+            opam init --auto-setup --disable-sandboxing --bare
+            opam switch create rocq-9 ocaml-base-compiler.4.14.2 || opam switch set rocq-9
+            eval $(opam env --switch=rocq-9)
+            opam repo add coq-released https://coq.inria.fr/opam/released || true
+            opam update
+            opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
+          fi
+          # Export opam paths for subsequent steps
+          echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
+          # Create compatibility symlinks (always, in case cache didn't preserve them)
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
+
+      - name: Build Rocq specs and proofs
+        run: |
+          echo "PATH=$PATH"
+          echo "Contents of rocq bin:"
+          ls -la /home/runner/.opam/rocq-9/bin/ | head -20
+          which coqc || echo "coqc not in PATH"
+          which rocqc || echo "rocqc not in PATH"
+          coqc --version || rocqc --version
+          cd plinko/formal
+          make clean
+          make all
+          make check-admits
+
+  rocq-of-rust:
+    name: Rocq-of-Rust Translation
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache opam
+        id: cache-opam-ror
+        uses: actions/cache@v4
+        with:
+          path: ~/.opam
+          key: opam-rocq9-ror-${{ runner.os }}-${{ hashFiles('.github/workflows/formal.yml') }}
+          restore-keys: |
+            opam-rocq9-ror-${{ runner.os }}-
+            opam-rocq9-${{ runner.os }}-
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-ror-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ror-${{ runner.os }}-
+
+      - name: Cache rocq-of-rust
+        id: cache-ror
+        uses: actions/cache@v4
+        with:
+          path: ~/rocq-of-rust
+          key: rocq-of-rust-${{ runner.os }}-v1
+          restore-keys: |
+            rocq-of-rust-${{ runner.os }}-
+
+      - name: Install opam and Rocq 9.0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y opam
+          if [ "${{ steps.cache-opam-ror.outputs.cache-hit }}" = "true" ] && [ -d ~/.opam/rocq-9 ]; then
+            echo "Using cached opam switch"
+            opam init --auto-setup --disable-sandboxing --bare || true
+          else
+            echo "Building fresh opam switch"
+            opam init --auto-setup --disable-sandboxing --bare
+            opam switch create rocq-9 ocaml-base-compiler.4.14.2 || opam switch set rocq-9
+            eval $(opam env --switch=rocq-9)
+            opam repo add coq-released https://coq.inria.fr/opam/released || true
+            opam update
+            opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
+          fi
+          # Export opam paths for subsequent steps
+          echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
+          # Create compatibility symlinks (always, in case cache didn't preserve them)
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc
+          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2024-12-07
+          components: rustc-dev, llvm-tools-preview
+
+      - name: Clone and build rocq-of-rust
+        run: |
+          if [ ! -d ~/rocq-of-rust ]; then
+            git clone https://github.com/formal-land/coq-of-rust.git ~/rocq-of-rust
+          fi
+          cd ~/rocq-of-rust
+          git fetch origin main
+          git checkout origin/main
+          if [ ! -f target/release/rocq-of-rust ]; then
+            echo "Building rocq-of-rust..."
+            cargo +nightly-2024-12-07 build --release
+          else
+            echo "Using cached rocq-of-rust binary"
+          fi
+
+      - name: Build RocqOfRust library
+        run: |
+          cd ~/rocq-of-rust/RocqOfRust
+          if [ -f M.vo ]; then
+            echo "Using cached RocqOfRust library"
+          else
+            echo "Building RocqOfRust library..."
+            make -j2 || make
+          fi
+
+      - name: Translate Rust to Rocq
+        id: translate
+        run: |
+          export PATH="$HOME/rocq-of-rust/target/release:$PATH"
+          cd plinko/formal
+          make translate
+
+      - name: Build proofs and linking layer
+        id: linking
+        run: |
+          cd plinko/formal
+          make clean
+          make ROCQOFRUST_PATH="$HOME/rocq-of-rust/RocqOfRust" all
+          make ROCQOFRUST_PATH="$HOME/rocq-of-rust/RocqOfRust" linking
+
+      - name: Comment on PR if translation/linking failed
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## [WARN] Formal Verification Issue
+            
+            The rocq-of-rust translation or linking layer failed. This means Rust changes may have broken formal verification.
+            
+            **This is non-blocking** but should be investigated before merging if formal verification is important for this change.
+            
+            <details>
+            <summary>What to check</summary>
+            
+            1. Did you change types or APIs in \`state-syncer/src/\`?
+            2. Run locally: \`cd plinko/formal && make translate && make linking\`
+            3. Check if rocq-of-rust supports the Rust constructs you added
+            
+            </details>
+            
+            See the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

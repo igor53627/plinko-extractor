@@ -296,7 +296,8 @@ impl IprfTee {
 
             let node_id = encode_node(low, high, self.domain);
             let prf_output = self.prf_eval(node_id);
-            let left_count = Self::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             let go_left = ct_le_u64(y, mid);
 
@@ -339,7 +340,8 @@ impl IprfTee {
             let total_bins = high - low + 1;
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
-            let left_count = Self::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             if ball_index < left_count {
                 high = mid;
@@ -351,14 +353,6 @@ impl IprfTee {
             }
         }
         low
-    }
-
-    fn binomial_sample(count: u64, num: u64, denom: u64, prf_output: u64) -> u64 {
-        if denom == 0 {
-            return 0;
-        }
-        let scaled = prf_output % (denom + 1);
-        (count * num + scaled) / denom
     }
 
     fn prf_eval(&self, x: u64) -> u64 {
@@ -445,22 +439,6 @@ impl Iprf {
             .collect()
     }
 
-    /// Deterministic binomial sampling matching Coq formalization.
-    ///
-    /// Given count balls and probability p = num/denom, determine how many go left.
-    /// Uses PRF output as dither for deterministic sampling.
-    ///
-    /// This matches the Coq definition:
-    ///   binomial_sample(count, num, denom, prf_output) =
-    ///     (count * num + (prf_output mod (denom + 1))) / denom
-    fn binomial_sample(count: u64, num: u64, denom: u64, prf_output: u64) -> u64 {
-        if denom == 0 {
-            return 0;
-        }
-        let scaled = prf_output % (denom + 1);
-        (count * num + scaled) / denom
-    }
-
     /// Determines which PMNS bin a ball falls into for a given ball index.
     ///
     /// Given a total of `n` balls partitioned into `m` bins, performs the PMNS forward
@@ -484,7 +462,8 @@ impl Iprf {
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
 
-            let left_count = Self::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             if ball_index < left_count {
                 high = mid;
@@ -533,7 +512,8 @@ impl Iprf {
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
 
-            let left_count = Self::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+            let left_count =
+                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
 
             if y <= mid {
                 high = mid;
