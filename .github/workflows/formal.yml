@@ -41,34 +41,41 @@ jobs:
             opam-rocq9-${{ runner.os }}-v2-
             opam-rocq9-${{ runner.os }}-
 
-      - name: Install opam and Rocq 9.0
+      - name: Install opam
         run: |
           sudo apt-get update
           sudo apt-get install -y opam
-          if [ "${{ steps.cache-opam.outputs.cache-hit }}" = "true" ] && [ -d ~/.opam/rocq-9 ]; then
-            echo "Using cached opam switch"
-            opam init --auto-setup --disable-sandboxing --bare || true
-          else
-            echo "Building fresh opam switch"
-            opam init --auto-setup --disable-sandboxing --bare
-            opam switch create rocq-9 ocaml-base-compiler.4.14.2 || opam switch set rocq-9
-            eval $(opam env --switch=rocq-9)
-            opam repo add coq-released https://coq.inria.fr/opam/released || true
-            opam update
-            opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
-          fi
-          # Export opam paths for subsequent steps
+
+      - name: Setup opam and Rocq 9.0
+        if: steps.cache-opam.outputs.cache-hit != 'true'
+        run: |
+          opam init --auto-setup --disable-sandboxing --bare
+          opam switch create rocq-9 ocaml-base-compiler.4.14.2 || opam switch set rocq-9
+          eval $(opam env --switch=rocq-9)
+          opam repo add coq-released https://coq.inria.fr/opam/released || true
+          opam update
+          opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
+
+      - name: Configure opam environment
+        run: |
           echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
-          # Create compatibility symlinks (always, in case cache didn't preserve them)
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile || true
+          # Debug: show available binaries
+          echo "Available binaries in opam switch:"
+          ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
+          # Create compatibility symlinks (Rocq 9.x uses 'rocq' binary with subcommands)
+          # rocq compile = coqc, rocq dep = coqdep, rocq makefile = coq_makefile
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqc || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqc || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqdep || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqdep || true
 
       - name: Verify Rocq installation
         run: |
-          echo "PATH=$PATH"
-          which coqc || which rocqc
-          coqc --version || rocqc --version
+          echo "Checking rocq binary..."
+          which rocq || echo "rocq not found"
+          rocq --version || echo "rocq --version failed"
+          # Verify compile subcommand works
+          rocq compile --version || rocq -v || echo "rocq compile check failed"
 
       - name: Build Rocq specs and proofs
         run: |
@@ -161,28 +168,33 @@ jobs:
           restore-keys: |
             rocq-of-rust-${{ runner.os }}-
 
-      - name: Install opam and Rocq 9.0
+      - name: Install opam
         run: |
           sudo apt-get update
           sudo apt-get install -y opam
-          if [ "${{ steps.cache-opam-ror.outputs.cache-hit }}" = "true" ] && [ -d ~/.opam/rocq-9 ]; then
-            echo "Using cached opam switch"
-            opam init --auto-setup --disable-sandboxing --bare || true
-          else
-            echo "Building fresh opam switch"
-            opam init --auto-setup --disable-sandboxing --bare
-            opam switch create rocq-9 ocaml-base-compiler.4.14.2 || opam switch set rocq-9
-            eval $(opam env --switch=rocq-9)
-            opam repo add coq-released https://coq.inria.fr/opam/released || true
-            opam update
-            opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
-          fi
-          # Export opam paths for subsequent steps
+
+      - name: Setup opam and Rocq 9.0
+        if: steps.cache-opam-ror.outputs.cache-hit != 'true'
+        run: |
+          opam init --auto-setup --disable-sandboxing --bare
+          opam switch create rocq-9 ocaml-base-compiler.4.14.2 || opam switch set rocq-9
+          eval $(opam env --switch=rocq-9)
+          opam repo add coq-released https://coq.inria.fr/opam/released || true
+          opam update
+          opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
+
+      - name: Configure opam environment
+        run: |
           echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
-          # Create compatibility symlinks (always, in case cache didn't preserve them)
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile || true
+          # Debug: show available binaries
+          echo "Available binaries in opam switch:"
+          ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
+          # Create compatibility symlinks (Rocq 9.x uses 'rocq' binary with subcommands)
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqc || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqc || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqdep || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqdep || true
+          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coq_makefile || true
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master

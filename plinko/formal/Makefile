@@ -1,7 +1,9 @@
 # Makefile for Plinko Formal Verification
 
-COQC ?= coqc
-COQDEP ?= coqdep
+# Rocq 9.x uses 'rocq compile' instead of 'coqc'
+# Fall back to coqc/coqdep for compatibility with older versions
+COQC ?= $(shell command -v rocq >/dev/null 2>&1 && echo "rocq compile" || echo "coqc")
+COQDEP ?= $(shell command -v rocq >/dev/null 2>&1 && echo "rocq dep" || echo "coqdep")
 
 # Path to RocqOfRust library (can be overridden via environment or command line)
 ROCQOFRUST_PATH ?= $(HOME)/rocq-of-rust/RocqOfRust
