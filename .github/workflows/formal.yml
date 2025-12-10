@@ -43,9 +43,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y opam
-          # Check if cache is valid (has rocqc binary)
+          # Check if cache is valid (has rocq binary)
           CACHE_VALID="false"
-          if [ "${{ steps.cache-opam.outputs.cache-hit }}" = "true" ] && [ -f ~/.opam/rocq-9/bin/rocqc ]; then
+          if [ "${{ steps.cache-opam.outputs.cache-hit }}" = "true" ] && [ -f ~/.opam/rocq-9/bin/rocq ]; then
             CACHE_VALID="true"
           fi
           if [ "$CACHE_VALID" = "true" ]; then
@@ -67,10 +67,16 @@ jobs:
           eval $(opam env --switch=rocq-9)
           # Export opam paths for subsequent steps
           echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
-          # Create compatibility symlinks (always, in case cache didn't preserve them)
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
+          # Create wrapper scripts for Coq compatibility (Rocq 9.0 uses 'rocq <subcommand>')
+          echo '#!/bin/sh' > /home/runner/.opam/rocq-9/bin/coqc
+          echo 'exec rocq compile "$@"' >> /home/runner/.opam/rocq-9/bin/coqc
+          chmod +x /home/runner/.opam/rocq-9/bin/coqc
+          echo '#!/bin/sh' > /home/runner/.opam/rocq-9/bin/coqdep
+          echo 'exec rocq dep "$@"' >> /home/runner/.opam/rocq-9/bin/coqdep
+          chmod +x /home/runner/.opam/rocq-9/bin/coqdep
+          echo '#!/bin/sh' > /home/runner/.opam/rocq-9/bin/coq_makefile
+          echo 'exec rocq makefile "$@"' >> /home/runner/.opam/rocq-9/bin/coq_makefile
+          chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Build Rocq specs and proofs
         run: |
@@ -130,9 +136,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y opam
-          # Check if cache is valid (has rocqc binary)
+          # Check if cache is valid (has rocq binary)
           CACHE_VALID="false"
-          if [ "${{ steps.cache-opam-ror.outputs.cache-hit }}" = "true" ] && [ -f ~/.opam/rocq-9/bin/rocqc ]; then
+          if [ "${{ steps.cache-opam-ror.outputs.cache-hit }}" = "true" ] && [ -f ~/.opam/rocq-9/bin/rocq ]; then
             CACHE_VALID="true"
           fi
           if [ "$CACHE_VALID" = "true" ]; then
@@ -154,10 +160,16 @@ jobs:
           eval $(opam env --switch=rocq-9)
           # Export opam paths for subsequent steps
           echo "/home/runner/.opam/rocq-9/bin" >> $GITHUB_PATH
-          # Create compatibility symlinks (always, in case cache didn't preserve them)
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqc /home/runner/.opam/rocq-9/bin/coqc
-          ln -sf /home/runner/.opam/rocq-9/bin/rocqdep /home/runner/.opam/rocq-9/bin/coqdep
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq_makefile /home/runner/.opam/rocq-9/bin/coq_makefile
+          # Create wrapper scripts for Coq compatibility (Rocq 9.0 uses 'rocq <subcommand>')
+          echo '#!/bin/sh' > /home/runner/.opam/rocq-9/bin/coqc
+          echo 'exec rocq compile "$@"' >> /home/runner/.opam/rocq-9/bin/coqc
+          chmod +x /home/runner/.opam/rocq-9/bin/coqc
+          echo '#!/bin/sh' > /home/runner/.opam/rocq-9/bin/coqdep
+          echo 'exec rocq dep "$@"' >> /home/runner/.opam/rocq-9/bin/coqdep
+          chmod +x /home/runner/.opam/rocq-9/bin/coqdep
+          echo '#!/bin/sh' > /home/runner/.opam/rocq-9/bin/coq_makefile
+          echo 'exec rocq makefile "$@"' >> /home/runner/.opam/rocq-9/bin/coq_makefile
+          chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master
