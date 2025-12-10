@@ -155,6 +155,8 @@ jobs:
             opam repo add coq-released https://coq.inria.fr/opam/released || true
             opam update
             opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
+            # Install RocqOfRust dependencies
+            opam install -y coq-hammer-tactics coq-smpl coq-coqutil || echo "Some RocqOfRust deps failed, continuing..."
           fi
           # Ensure opam env is set for this step
           eval $(opam env --switch=rocq-9)
