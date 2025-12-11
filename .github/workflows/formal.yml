@@ -142,10 +142,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.opam
-          key: opam-rocq9-ror-${{ runner.os }}-v2-${{ hashFiles('plinko/formal/Makefile', '.github/workflows/formal.yml') }}
+          # v3: added coq-hammer, coq-coqutil, coq-smpl dependencies
+          key: opam-rocq9-ror-${{ runner.os }}-v3-${{ hashFiles('plinko/formal/Makefile', '.github/workflows/formal.yml') }}
           restore-keys: |
-            opam-rocq9-ror-${{ runner.os }}-v2-
-            opam-rocq9-${{ runner.os }}-
+            opam-rocq9-ror-${{ runner.os }}-v3-
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -164,10 +164,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v3: switched to fork with Rocq 9.x CLI support
-          key: rocq-of-rust-fork-${{ runner.os }}-v3
+          # v4: fork with Rocq 9.x CLI support + blacklist fixes
+          key: rocq-of-rust-fork-${{ runner.os }}-v4
           restore-keys: |
-            rocq-of-rust-fork-${{ runner.os }}-
+            rocq-of-rust-fork-${{ runner.os }}-v4
 
       - name: Install opam
         run: |
@@ -182,7 +182,12 @@ jobs:
           eval $(opam env --switch=rocq-9)
           opam repo add coq-released https://coq.inria.fr/opam/released || true
           opam update
+          # Install Rocq 9.0 and dependencies needed for RocqOfRust library
           opam install -y rocq-prover.9.0.0 rocq-stdlib.9.0.0
+          # Install optional dependencies for RocqOfRust (may fail if not all Rocq 9.x compatible)
+          opam install -y coq-hammer.1.3.2+9.0 || echo "coq-hammer install failed"
+          opam install -y coq-coqutil || echo "coq-coqutil install failed"
+          opam install -y coq-smpl || echo "coq-smpl install failed"
 
       - name: Configure opam environment
         run: |
