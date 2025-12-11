@@ -353,11 +353,7 @@ impl SwapOrNotSrTee {
         for level in 0..self.max_levels {
             let should_skip = ct_ge_u64(1, n) | done;
 
-            val = ct_select_u64(
-                should_skip,
-                val,
-                self.apply_rounds_forward(level, n, val),
-            );
+            val = ct_select_u64(should_skip, val, self.apply_rounds_forward(level, n, val));
 
             let half = n / 2;
             let exited = ct_ge_u64(val, half);
@@ -547,8 +543,11 @@ impl IprfTee {
         for i in 0..MAX_PREIMAGES {
             let in_range = ct_lt_u64(i as u64, count as u64);
             let z = ball_start + i as u64;
-            let x = self.prp.inverse(z);
-            result[i] = ct_select_u64(in_range, x, 0);
+            // Only call inverse for valid z values; use 0 for out-of-range
+            let z_valid = ct_lt_u64(z, self.domain);
+            let z_safe = ct_select_u64(z_valid, z, 0);
+            let x = self.prp.inverse(z_safe);
+            result[i] = ct_select_u64(in_range & z_valid, x, 0);
         }
 
         (result, count)
@@ -1113,7 +1112,11 @@ mod tests {
         for x in 0..domain {
             let y = prp_tee.forward(x);
             let x_recovered = prp_tee.inverse(y);
-            assert_eq!(x, x_recovered, "SR TEE inverse roundtrip failed for x={}", x);
+            assert_eq!(
+                x, x_recovered,
+                "SR TEE inverse roundtrip failed for x={}",
+                x
+            );
         }
     }
 }
