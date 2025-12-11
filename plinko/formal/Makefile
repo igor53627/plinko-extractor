@@ -1,7 +1,9 @@
 # Makefile for Plinko Formal Verification
 
-COQC := coqc
-COQDEP := coqdep
+# Rocq 9.x uses 'rocq compile' instead of 'coqc'
+# Fall back to coqc/coqdep for compatibility with older versions
+COQC ?= $(shell command -v rocq >/dev/null 2>&1 && echo "rocq compile" || echo "coqc")
+COQDEP ?= $(shell command -v rocq >/dev/null 2>&1 && echo "rocq dep" || echo "coqdep")
 
 # Path to RocqOfRust library (can be overridden via environment or command line)
 ROCQOFRUST_PATH ?= $(HOME)/rocq-of-rust/RocqOfRust
@@ -27,9 +29,12 @@ ALL_VO := $(ALL_V:.v=.vo)
 TRANS_VO := $(TRANS_FILES:.v=.vo)
 LINKING_VO := $(LINKING_FILES:.v=.vo)
 
-.PHONY: all clean specs sims proofs linking translate check-deps help ci audit check-admits
+.PHONY: all clean specs sims proofs linking translate check-deps help ci ci-quick ci-full audit check-admits admit-count verify-axioms
 
 all: specs sims proofs
+
+# Artifacts directory for CI
+ARTIFACTS_DIR ?= artifacts
 
 # Build specifications
 specs: $(SPEC_FILES:.v=.vo)
@@ -136,22 +141,32 @@ check-deps:
 		echo "RocqOfRust: NOT FOUND"; \
 	fi
 
-# CI target
-ci: clean all linking
-	@echo "CI build complete!"
+# CI targets
+ci: ci-full
 
-# Audit axioms and admits
+# Fast CI for PRs (specs + sims + proofs only)
+ci-quick: clean all
+	@echo "Quick CI build complete (specs + sims + proofs)!"
+
+# Full CI for main branch (includes linking)
+ci-full: clean all linking
+	@echo "Full CI build complete (including linking)!"
+
+# Audit axioms and admits (writes to artifacts for CI upload)
 audit:
-	@echo "=== Plinko Axiom/Admit Audit ==="
-	@echo ""
-	@echo "Axiom declarations:"
-	@grep -rn '^Axiom' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"
-	@echo ""
-	@echo "Parameter declarations:"
-	@grep -rn '^Parameter' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"
-	@echo ""
-	@echo "Admits:"
-	@grep -rni '\badmitted\b' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"
+	@mkdir -p $(ARTIFACTS_DIR)
+	@{ \
+		echo "=== Plinko Axiom/Admit Audit ==="; \
+		echo ""; \
+		echo "Axiom declarations:"; \
+		grep -rn '^Axiom' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"; \
+		echo ""; \
+		echo "Parameter declarations:"; \
+		grep -rn '^Parameter' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"; \
+		echo ""; \
+		echo "Admits:"; \
+		grep -rni '\badmitted\b' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"; \
+	} | tee $(ARTIFACTS_DIR)/audit.txt
 
 # Threshold for allowed admits
 ADMIT_THRESHOLD ?= 10
@@ -167,24 +182,53 @@ check-admits:
 		echo "OK: admit count ($$ADMITS) within threshold ($(ADMIT_THRESHOLD))"; \
 	fi
 
+# Get admit count (for CI summary)
+admit-count:
+	@grep -rni '\badmitted\b' specs/ sims/ proofs/ linking/ 2>/dev/null | wc -l | tr -d ' '
+
+# Verify no unexpected axioms/parameters
+AXIOM_ALLOWLIST ?= axioms_allowlist.txt
+verify-axioms:
+	@echo "Verifying axioms/parameters..."
+	@AXIOMS=$$(grep -RnhE '^(Axiom|Parameter)' specs/ sims/ proofs/ linking/ 2>/dev/null || true); \
+	if [ -z "$$AXIOMS" ]; then \
+		echo "OK: no axioms/parameters found."; \
+	else \
+		if [ -f "$(AXIOM_ALLOWLIST)" ]; then \
+			BAD=$$(echo "$$AXIOMS" | grep -v -F -f "$(AXIOM_ALLOWLIST)" || true); \
+		else \
+			BAD="$$AXIOMS"; \
+		fi; \
+		if [ -n "$$BAD" ]; then \
+			echo "WARNING: non-allowlisted axioms/parameters:"; \
+			echo "$$BAD"; \
+		else \
+			echo "OK: all axioms/parameters are allowlisted."; \
+		fi; \
+	fi
+
 # Help
 help:
 	@echo "Plinko Formal Verification Makefile"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all         - Build specs, sims, and proofs (default)"
-	@echo "  specs       - Build specification files"
-	@echo "  sims        - Build simulation files"
-	@echo "  proofs      - Build proof files"
-	@echo "  translation - Build translated Rust code (requires RocqOfRust)"
-	@echo "  translate   - Re-translate Rust to Rocq (requires rocq-of-rust)"
-	@echo "  linking     - Build linking layer (requires RocqOfRust)"
-	@echo "  clean       - Remove all generated files"
-	@echo "  check-deps  - Verify dependencies are installed"
-	@echo "  ci          - CI build (clean + all + linking)"
-	@echo "  audit       - List axioms, parameters, and admits"
-	@echo "  check-admits- Fail if admits exceed threshold"
-	@echo "  help        - Show this message"
+	@echo "  all           - Build specs, sims, and proofs (default)"
+	@echo "  specs         - Build specification files"
+	@echo "  sims          - Build simulation files"
+	@echo "  proofs        - Build proof files"
+	@echo "  translation   - Build translated Rust code (requires RocqOfRust)"
+	@echo "  translate     - Re-translate Rust to Rocq (requires rocq-of-rust)"
+	@echo "  linking       - Build linking layer (requires RocqOfRust)"
+	@echo "  clean         - Remove all generated files"
+	@echo "  check-deps    - Verify dependencies are installed"
+	@echo "  ci            - Full CI build (alias for ci-full)"
+	@echo "  ci-quick      - Fast CI for PRs (specs + sims + proofs)"
+	@echo "  ci-full       - Full CI for main (includes linking)"
+	@echo "  audit         - List axioms, parameters, and admits"
+	@echo "  check-admits  - Fail if admits exceed threshold"
+	@echo "  admit-count   - Print admit count (for CI summary)"
+	@echo "  verify-axioms - Check for unexpected axioms/parameters"
+	@echo "  help          - Show this message"
 	@echo ""
 	@echo "Prerequisites:"
 	@echo "  - Rocq 9.x (opam switch rocq-9)"

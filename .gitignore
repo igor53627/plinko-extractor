@@ -13,3 +13,4 @@ plinko/formal/**/.*.aux
 plinko/formal/.lia.cache
 plinko/formal/.nia.cache
 plinko/formal/.depend
+plinko/formal/artifacts/

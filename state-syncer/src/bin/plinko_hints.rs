@@ -20,6 +20,10 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 const WORD_SIZE: usize = 32;
+const SEED_SIZE: usize = 32;
+
+const SEED_LABEL_REGULAR: &[u8] = b"plinko_regular_subset";
+const SEED_LABEL_BACKUP: &[u8] = b"plinko_backup_subset";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Plinko PIR Hint Generator (Paper-compliant)", long_about = None)]
@@ -36,12 +40,12 @@ struct Args {
     #[arg(short, long)]
     backup_hints: Option<usize>,
 
-    /// Override entries per block (w). Default: sqrt(N) adjusted to divide N
+    /// Override entries per block (w). Default: round(sqrt(N)); DB is padded as needed.
     #[arg(short, long)]
     entries_per_block: Option<usize>,
 
-    /// Allow truncation if N is not divisible by w (drops tail entries)
-    #[arg(long, default_value = "false")]
+    /// [DEBUG ONLY] Allow truncation instead of padding (violates security assumptions)
+    #[arg(long, default_value = "false", hide = true)]
     allow_truncation: bool,
 
     /// Master seed for reproducible hint generation (hex, 32 bytes).
@@ -55,14 +59,16 @@ struct Args {
 }
 
 /// Regular hint: P_j subset of c/2+1 blocks, single parity
+/// Stores seed instead of explicit block list for compact representation
 struct RegularHint {
-    blocks: Vec<usize>,
+    subset_seed: [u8; 32],
     parity: [u8; 32],
 }
 
 /// Backup hint: B_j subset of c/2 blocks, dual parities
+/// Stores seed instead of explicit block list for compact representation
 struct BackupHint {
-    blocks: Vec<usize>,
+    subset_seed: [u8; 32],
     parity_in: [u8; 32],
     parity_out: [u8; 32],
 }
@@ -73,19 +79,34 @@ fn xor_32(dst: &mut [u8; 32], src: &[u8; 32]) {
     }
 }
 
-fn find_nearest_divisor(n: usize, target: usize) -> usize {
-    if n % target == 0 {
-        return target;
-    }
-    for delta in 1..target {
-        if target >= delta && n % (target - delta) == 0 {
-            return target - delta;
-        }
-        if n % (target + delta) == 0 {
-            return target + delta;
-        }
-    }
-    1
+/// Derive a per-hint subset seed from master seed and hint index
+fn derive_subset_seed(master_seed: &[u8; 32], label: &[u8], idx: u64) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(master_seed);
+    hasher.update(label);
+    hasher.update(&idx.to_le_bytes());
+    let hash = hasher.finalize();
+    let mut seed = [0u8; 32];
+    seed.copy_from_slice(&hash[0..32]);
+    seed
+}
+
+/// Compute regular hint block subset from seed
+fn compute_regular_blocks(seed: &[u8; 32], c: usize) -> Vec<usize> {
+    let regular_subset_size = c / 2 + 1;
+    let mut rng = ChaCha20Rng::from_seed(*seed);
+    let mut blocks = random_subset(&mut rng, regular_subset_size, c);
+    blocks.sort_unstable();
+    blocks
+}
+
+/// Compute backup hint block subset from seed
+fn compute_backup_blocks(seed: &[u8; 32], c: usize) -> Vec<usize> {
+    let backup_subset_size = c / 2;
+    let mut rng = ChaCha20Rng::from_seed(*seed);
+    let mut blocks = random_subset(&mut rng, backup_subset_size, c);
+    blocks.sort_unstable();
+    blocks
 }
 
 /// Derive c iPRF keys from master seed (one per block)
@@ -149,35 +170,92 @@ fn main() -> eyre::Result<()> {
     }
     println!("Total Entries (N): {}", n_entries);
 
-    let w = args.entries_per_block.unwrap_or_else(|| {
-        let sqrt_n = (n_entries as f64).sqrt().round() as usize;
-        find_nearest_divisor(n_entries, sqrt_n)
-    });
+    // Default w = round(sqrt(N)), no divisor search - pad instead
+    let default_w = (n_entries as f64).sqrt().round() as usize;
+    let w = args.entries_per_block.unwrap_or(default_w);
+    if w == 0 {
+        eprintln!("Error: entries_per_block (w) must be > 0");
+        std::process::exit(1);
+    }
 
+    // Compute padding to make n_entries a multiple of w (pad with dummy zero entries)
     let remainder = n_entries % w;
-    if remainder != 0 {
+    let (logical_n_entries, pad_entries) = if remainder == 0 {
+        (n_entries, 0usize)
+    } else {
+        let pad = w - remainder;
+        (n_entries + pad, pad)
+    };
+
+    if pad_entries > 0 {
         if args.allow_truncation {
+            // Legacy behavior: truncate instead of padding
             println!(
-                "Warning: N ({}) not divisible by w ({}), {} tail entries will be ignored",
+                "Warning: N ({}) not divisible by w ({}), {} tail entries will be ignored (truncation mode)",
                 n_entries, w, remainder
             );
         } else {
-            eprintln!(
-                "Error: N ({}) must be divisible by w ({}) for correct Plinko hints.",
-                n_entries, w
+            println!(
+                "Info: N ({}) not divisible by w ({}); padding with {} dummy entries.",
+                n_entries, w, pad_entries
             );
-            eprintln!(
-                "       {} entries would be dropped. Use --allow-truncation to proceed anyway.",
-                remainder
-            );
-            std::process::exit(1);
         }
     }
 
-    let c = n_entries / w;
-    let n_effective = c * w;
+    // Use logical_n_entries (after padding) unless truncation mode (debug only)
+    let (mut n_effective, mut pad_entries) = if args.allow_truncation && remainder != 0 {
+        eprintln!(
+            "Warning: --allow-truncation is a debug flag that violates security assumptions."
+        );
+        (n_entries - remainder, 0usize)
+    } else {
+        (logical_n_entries, pad_entries)
+    };
+    let mut c = n_effective / w;
+
+    // Enforce c >= 2
+    if c < 2 {
+        eprintln!(
+            "Error: Number of blocks (c = {}) must be at least 2 for Plinko security.",
+            c
+        );
+        eprintln!("       Decrease --entries-per-block or increase DB size.");
+        std::process::exit(1);
+    }
+
+    // Auto-bump c to even if odd (required for security proof)
+    // Skip in truncation mode (debug only, explicitly violates security)
+    if !args.allow_truncation && c % 2 != 0 {
+        c += 1;
+        n_effective = c * w;
+        pad_entries = n_effective - n_entries;
+        println!(
+            "Info: Bumped c from {} to {} (must be even for security). Padding with {} entries.",
+            c - 1,
+            c,
+            pad_entries
+        );
+    } else if args.allow_truncation && c % 2 != 0 {
+        eprintln!(
+            "Warning: --allow-truncation mode with odd c = {} further violates security assumptions.",
+            c
+        );
+    }
 
     println!("\nPlinko Parameters:");
+    println!("  Physical entries (from DB): {}", n_entries);
+    println!(
+        "  Logical entries (after {}): {}",
+        if args.allow_truncation && n_effective < n_entries {
+            "truncation"
+        } else {
+            "padding"
+        },
+        n_effective
+    );
+    if pad_entries > 0 {
+        println!("  Padded entries: {}", pad_entries);
+    }
     println!("  Entries per block (w): {}", w);
     println!("  Number of blocks (c): {}", c);
     println!(
@@ -195,9 +273,11 @@ fn main() -> eyre::Result<()> {
         std::process::exit(1);
     }
 
-    if c < 2 {
-        eprintln!(
-            "Warning: c={} is very small; backup hints will have empty subsets",
+    // Final assertion: c must be even (should always pass after auto-bump in production mode)
+    if !args.allow_truncation {
+        assert!(
+            c % 2 == 0,
+            "Invariant violation: number of blocks (c = {}) must be even for security.",
             c
         );
     }
@@ -217,10 +297,11 @@ fn main() -> eyre::Result<()> {
     println!("  Regular subset size (c/2+1): {}", regular_subset_size);
     println!("  Backup subset size (c/2): {}", backup_subset_size);
 
-    let regular_storage = num_regular * (regular_subset_size * 8 + WORD_SIZE);
-    let backup_storage = num_backup * (backup_subset_size * 8 + 2 * WORD_SIZE);
+    // Storage: each hint stores only a 32-byte seed + parities (not full block list)
+    let regular_storage = num_regular * (SEED_SIZE + WORD_SIZE);
+    let backup_storage = num_backup * (SEED_SIZE + 2 * WORD_SIZE);
     println!(
-        "  Estimated hint storage: {:.2} MB",
+        "  Estimated hint storage: {:.2} MB (seed-based, compact)",
         (regular_storage + backup_storage) as f64 / 1024.0 / 1024.0
     );
 
@@ -266,39 +347,44 @@ fn main() -> eyre::Result<()> {
     println!("\n[1/4] Generating {} iPRF keys (one per block)...", c);
     let block_keys = derive_block_keys(&master_seed, c);
 
-    // Step 2: Initialize regular hints with random block subsets
+    // Step 2: Initialize regular hints with seed-based block subsets
     println!(
         "[2/4] Initializing {} regular hints (subset size {})...",
         num_regular, regular_subset_size
     );
-    let mut hint_rng = ChaCha20Rng::from_seed(master_seed);
-    let mut regular_hints: Vec<RegularHint> = (0..num_regular)
-        .map(|_| {
-            let mut blocks = random_subset(&mut hint_rng, regular_subset_size, c);
-            blocks.sort_unstable();
-            RegularHint {
-                blocks,
-                parity: [0u8; 32],
-            }
-        })
-        .collect();
+    let mut regular_hints: Vec<RegularHint> = Vec::with_capacity(num_regular);
+    let mut regular_hint_blocks: Vec<Vec<usize>> = Vec::with_capacity(num_regular);
 
-    // Step 3: Initialize backup hints with random block subsets
+    for j in 0..num_regular {
+        let subset_seed = derive_subset_seed(&master_seed, SEED_LABEL_REGULAR, j as u64);
+        let blocks = compute_regular_blocks(&subset_seed, c);
+
+        regular_hints.push(RegularHint {
+            subset_seed,
+            parity: [0u8; 32],
+        });
+        regular_hint_blocks.push(blocks);
+    }
+
+    // Step 3: Initialize backup hints with seed-based block subsets
     println!(
         "[3/4] Initializing {} backup hints (subset size {})...",
         num_backup, backup_subset_size
     );
-    let mut backup_hints: Vec<BackupHint> = (0..num_backup)
-        .map(|_| {
-            let mut blocks = random_subset(&mut hint_rng, backup_subset_size, c);
-            blocks.sort_unstable();
-            BackupHint {
-                blocks,
-                parity_in: [0u8; 32],
-                parity_out: [0u8; 32],
-            }
-        })
-        .collect();
+    let mut backup_hints: Vec<BackupHint> = Vec::with_capacity(num_backup);
+    let mut backup_hint_blocks: Vec<Vec<usize>> = Vec::with_capacity(num_backup);
+
+    for j in 0..num_backup {
+        let subset_seed = derive_subset_seed(&master_seed, SEED_LABEL_BACKUP, j as u64);
+        let blocks = compute_backup_blocks(&subset_seed, c);
+
+        backup_hints.push(BackupHint {
+            subset_seed,
+            parity_in: [0u8; 32],
+            parity_out: [0u8; 32],
+        });
+        backup_hint_blocks.push(blocks);
+    }
 
     // Pre-create iPRF instances for each block (avoids recreating per entry)
     let block_iprfs: Vec<Iprf> = block_keys
@@ -320,10 +406,15 @@ fn main() -> eyre::Result<()> {
         let block = i / w;
         let offset = i % w;
 
-        let entry_offset = i * WORD_SIZE;
-        let entry: [u8; 32] = db_bytes[entry_offset..entry_offset + WORD_SIZE]
-            .try_into()
-            .unwrap();
+        // For padded entries beyond actual DB, use zero (XOR with zero is no-op)
+        let entry: [u8; 32] = if i < n_entries {
+            let entry_offset = i * WORD_SIZE;
+            db_bytes[entry_offset..entry_offset + WORD_SIZE]
+                .try_into()
+                .unwrap()
+        } else {
+            [0u8; 32]
+        };
 
         // Find all hints j where iPRF.forward(j) == offset
         let hint_indices = block_iprfs[block].inverse(offset as u64);
@@ -332,19 +423,17 @@ fn main() -> eyre::Result<()> {
             let j = j as usize;
             if j < num_regular {
                 // Regular hint: XOR if block in P
-                let hint = &mut regular_hints[j];
-                if block_in_subset(&hint.blocks, block) {
-                    xor_32(&mut hint.parity, &entry);
+                if block_in_subset(&regular_hint_blocks[j], block) {
+                    xor_32(&mut regular_hints[j].parity, &entry);
                 }
             } else {
                 // Backup hint: XOR to parity_in if in P, else parity_out
                 let backup_idx = j - num_regular;
                 if backup_idx < num_backup {
-                    let hint = &mut backup_hints[backup_idx];
-                    if block_in_subset(&hint.blocks, block) {
-                        xor_32(&mut hint.parity_in, &entry);
+                    if block_in_subset(&backup_hint_blocks[backup_idx], block) {
+                        xor_32(&mut backup_hints[backup_idx].parity_in, &entry);
                     } else {
-                        xor_32(&mut hint.parity_out, &entry);
+                        xor_32(&mut backup_hints[backup_idx].parity_out, &entry);
                     }
                 }
             }
@@ -356,6 +445,11 @@ fn main() -> eyre::Result<()> {
     }
 
     pb.finish_with_message("Done");
+
+    // Drop in-memory block lists now that streaming is complete
+    // Only seeds + parities are retained in hint structs
+    drop(regular_hint_blocks);
+    drop(backup_hint_blocks);
 
     let duration = start.elapsed();
     let throughput_mb = (file_len as f64 / 1024.0 / 1024.0) / duration.as_secs_f64();
@@ -503,5 +597,54 @@ mod tests {
         xor_32(&mut a, &b);
         xor_32(&mut a, &b);
         assert_eq!(a, original);
+    }
+
+    #[test]
+    fn test_derive_subset_seed_deterministic() {
+        let master = [5u8; 32];
+        let seed1 = derive_subset_seed(&master, SEED_LABEL_REGULAR, 42);
+        let seed2 = derive_subset_seed(&master, SEED_LABEL_REGULAR, 42);
+        assert_eq!(seed1, seed2);
+    }
+
+    #[test]
+    fn test_derive_subset_seed_unique_per_index() {
+        let master = [6u8; 32];
+        let seed1 = derive_subset_seed(&master, SEED_LABEL_REGULAR, 0);
+        let seed2 = derive_subset_seed(&master, SEED_LABEL_REGULAR, 1);
+        assert_ne!(seed1, seed2);
+    }
+
+    #[test]
+    fn test_derive_subset_seed_unique_per_label() {
+        let master = [7u8; 32];
+        let seed1 = derive_subset_seed(&master, SEED_LABEL_REGULAR, 0);
+        let seed2 = derive_subset_seed(&master, SEED_LABEL_BACKUP, 0);
+        assert_ne!(seed1, seed2);
+    }
+
+    #[test]
+    fn test_compute_regular_blocks_size() {
+        let seed = [8u8; 32];
+        let c = 100;
+        let blocks = compute_regular_blocks(&seed, c);
+        assert_eq!(blocks.len(), c / 2 + 1);
+    }
+
+    #[test]
+    fn test_compute_backup_blocks_size() {
+        let seed = [9u8; 32];
+        let c = 100;
+        let blocks = compute_backup_blocks(&seed, c);
+        assert_eq!(blocks.len(), c / 2);
+    }
+
+    #[test]
+    fn test_compute_blocks_deterministic() {
+        let seed = [10u8; 32];
+        let c = 50;
+        let blocks1 = compute_regular_blocks(&seed, c);
+        let blocks2 = compute_regular_blocks(&seed, c);
+        assert_eq!(blocks1, blocks2);
     }
 }
