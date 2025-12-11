@@ -1,0 +1,55 @@
+{
+  "repo_notes": [
+    {
+      "content": "This repository implements the Plinko PIR (Private Information Retrieval) scheme from ePrint 2024-318. The canonical protocol reference is docs/plinko_paper_index.json which indexes parsed paper content, regression test data location, and video resources.",
+      "author": "maintainer"
+    },
+    {
+      "content": "Regression test data (3.6GB Ethereum state subset) is hosted on Cloudflare R2 at s3://plinko-regression-data/ with endpoint https://c6ffe0823b48a4b7689d9b9e9045e465.r2.cloudflarestorage.com. See docs/plinko_paper_index.json for download details.",
+      "author": "maintainer"
+    },
+    {
+      "content": "The state-syncer/ crate contains the core Plinko implementation: iPRF (invertible PRF), Swap-or-Not PRP, binomial sampling, and hint generation. The plinko/formal/ directory contains Rocq proofs for formal verification.",
+      "author": "maintainer"
+    },
+    {
+      "content": "Key video resource: Alex Hoover's talk 'Plinko - Single-Server PIR with Efficient Updates via Invertible PRFs' at https://www.youtube.com/watch?v=okJaBn7ZXnc",
+      "author": "maintainer"
+    }
+  ],
+  "pages": [
+    {
+      "title": "Architecture Overview",
+      "purpose": "High-level overview of Plinko PIR implementation: extractor, state-syncer, and formal verification components"
+    },
+    {
+      "title": "Plinko Protocol",
+      "purpose": "Document the Plinko PIR scheme from paper 2024-318: HintInit, Query, Answer, Recon, UpdateHint algorithms",
+      "parent": "Architecture Overview"
+    },
+    {
+      "title": "iPRF Implementation",
+      "purpose": "Document state-syncer/src/iprf.rs: Swap-or-Not PRP, PMNS (Pseudorandom Multinomial Sampler), forward/inverse operations",
+      "parent": "Plinko Protocol"
+    },
+    {
+      "title": "Hint Generation",
+      "purpose": "Document state-syncer/src/bin/plinko_hints.rs: streaming HintInit, regular/backup hints, seed-based storage",
+      "parent": "Plinko Protocol"
+    },
+    {
+      "title": "Ethereum State Extractor",
+      "purpose": "Document src/: Reth database extraction, account/storage mapping, output artifacts (database.bin, mappings)",
+      "parent": "Architecture Overview"
+    },
+    {
+      "title": "Formal Verification",
+      "purpose": "Document plinko/formal/: Rocq specs, proofs, linking layer, CI verification workflow",
+      "parent": "Architecture Overview"
+    },
+    {
+      "title": "Regression Testing",
+      "purpose": "Document test data on Cloudflare R2, benchmark parameters, expected performance metrics"
+    }
+  ]
+}
