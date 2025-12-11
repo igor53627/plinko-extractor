@@ -15,8 +15,9 @@ pub type PrfKey128 = [u8; 16];
 
 /// Swap-or-Not small-domain PRP (Morris-Rogaway 2013)
 ///
-/// Achieves full security (withstands all N queries) in O(n log n) time.
-/// Each round is an involution, so inversion just runs rounds in reverse.
+/// Inner shuffle used by SwapOrNotSr. Provides security for q < (1-epsilon)*N queries.
+/// For full-domain security (all N queries), use SwapOrNotSr which wraps this with
+/// the Sometimes-Recurse transformation.
 pub struct SwapOrNot {
     cipher: Aes128,
     domain: u64,
@@ -123,6 +124,284 @@ impl SwapOrNot {
     }
 }
 
+/// Conservative round count per Morris-Rogaway bounds for full-domain security
+fn sr_t_rounds(n: u64) -> usize {
+    if n <= 1 {
+        return 0;
+    }
+    let logn = (n as f64).log2().ceil();
+    // Per MR: ~14.5 * log2(N) + constant for security against N queries
+    (14.5 * logn).ceil() as usize + 16
+}
+
+/// Sometimes-Recurse PRP wrapper (Morris-Rogaway Fig. 1)
+///
+/// Provides full-domain security: secure even when adversary queries all N elements.
+/// Uses SwapOrNot as inner shuffle with recursive halving.
+pub struct SwapOrNotSr {
+    cipher: Aes128,
+    domain: u64,
+    max_levels: usize,
+}
+
+impl SwapOrNotSr {
+    pub fn new(key: PrfKey128, domain: u64) -> Self {
+        assert!(domain > 0, "SwapOrNotSr domain must be positive");
+        let cipher = Aes128::new(&GenericArray::from(key));
+        let max_levels = if domain <= 1 {
+            0
+        } else {
+            (domain as f64).log2().ceil() as usize
+        };
+
+        Self {
+            cipher,
+            domain,
+            max_levels,
+        }
+    }
+
+    fn derive_round_key(&self, level: usize, round: usize, n: u64) -> u64 {
+        let mut input = [0u8; 16];
+        let combined = ((level as u64) << 32) | (round as u64);
+        input[0..8].copy_from_slice(&combined.to_be_bytes());
+        input[8..16].copy_from_slice(&n.to_be_bytes());
+
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+
+        u64::from_be_bytes(block[0..8].try_into().unwrap()) % n
+    }
+
+    fn prf_bit(&self, level: usize, round: usize, canonical: u64, _n: u64) -> bool {
+        let mut input = [0u8; 16];
+        let combined = ((level as u64) << 32) | (round as u64) | 0x80000000;
+        input[0..8].copy_from_slice(&combined.to_be_bytes());
+        input[8..16].copy_from_slice(&canonical.to_be_bytes());
+
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+
+        (block[0] & 1) == 1
+    }
+
+    fn round(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
+        let k_i = self.derive_round_key(level, round_num, n);
+        let partner = (k_i + n - (x % n)) % n;
+        let canonical = x.max(partner);
+
+        if self.prf_bit(level, round_num, canonical, n) {
+            partner
+        } else {
+            x
+        }
+    }
+
+    fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
+        let t = sr_t_rounds(n);
+        let mut val = x;
+        for r in 0..t {
+            val = self.round(level, r, n, val);
+        }
+        val
+    }
+
+    fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
+        let t = sr_t_rounds(n);
+        let mut val = y;
+        for r in (0..t).rev() {
+            val = self.round(level, r, n, val);
+        }
+        val
+    }
+
+    pub fn forward(&self, x: u64) -> u64 {
+        assert!(x < self.domain, "x must be < domain");
+        let mut val = x;
+        let mut n = self.domain;
+
+        for level in 0..self.max_levels {
+            if n <= 1 {
+                break;
+            }
+            val = self.apply_rounds_forward(level, n, val);
+            let half = n / 2;
+            if val >= half {
+                return val;
+            }
+            n = half;
+        }
+        val
+    }
+
+    pub fn inverse(&self, y: u64) -> u64 {
+        assert!(y < self.domain, "y must be < domain");
+
+        let mut sizes = Vec::with_capacity(self.max_levels);
+        let mut n = self.domain;
+        for _ in 0..self.max_levels {
+            if n <= 1 {
+                break;
+            }
+            sizes.push(n);
+            let half = n / 2;
+            if y >= half {
+                break;
+            }
+            n = half;
+        }
+
+        let mut val = y;
+        for (level, &n) in sizes.iter().enumerate().rev() {
+            val = self.apply_rounds_inverse(level, n, val);
+        }
+        val
+    }
+}
+
+/// Constant-time Sometimes-Recurse PRP for TEE execution
+///
+/// Full-domain security variant using constant-time operations to prevent
+/// timing side-channels. Uses branchless logic throughout.
+pub struct SwapOrNotSrTee {
+    cipher: Aes128,
+    domain: u64,
+    max_levels: usize,
+}
+
+impl SwapOrNotSrTee {
+    pub fn new(key: PrfKey128, domain: u64) -> Self {
+        assert!(domain > 0, "SwapOrNotSrTee domain must be positive");
+        let cipher = Aes128::new(&GenericArray::from(key));
+        let max_levels = if domain <= 1 {
+            0
+        } else {
+            (domain as f64).log2().ceil() as usize
+        };
+
+        Self {
+            cipher,
+            domain,
+            max_levels,
+        }
+    }
+
+    fn derive_round_key(&self, level: usize, round: usize, n: u64) -> u64 {
+        let mut input = [0u8; 16];
+        let combined = ((level as u64) << 32) | (round as u64);
+        input[0..8].copy_from_slice(&combined.to_be_bytes());
+        input[8..16].copy_from_slice(&n.to_be_bytes());
+
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+
+        u64::from_be_bytes(block[0..8].try_into().unwrap()) % n
+    }
+
+    fn prf_bit_ct(&self, level: usize, round: usize, canonical: u64) -> u64 {
+        let mut input = [0u8; 16];
+        let combined = ((level as u64) << 32) | (round as u64) | 0x80000000;
+        input[0..8].copy_from_slice(&combined.to_be_bytes());
+        input[8..16].copy_from_slice(&canonical.to_be_bytes());
+
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+
+        (block[0] & 1) as u64
+    }
+
+    fn round_ct(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
+        use crate::constant_time::{ct_lt_u64, ct_select_u64};
+
+        let k_i = self.derive_round_key(level, round_num, n);
+        let partner = (k_i + n - (x % n)) % n;
+
+        let x_lt_partner = ct_lt_u64(x, partner);
+        let canonical = ct_select_u64(x_lt_partner, partner, x);
+
+        let swap = self.prf_bit_ct(level, round_num, canonical);
+        ct_select_u64(swap, partner, x)
+    }
+
+    fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
+        let t = sr_t_rounds(n);
+        let mut val = x;
+        for r in 0..t {
+            val = self.round_ct(level, r, n, val);
+        }
+        val
+    }
+
+    fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
+        let t = sr_t_rounds(n);
+        let mut val = y;
+        for r in (0..t).rev() {
+            val = self.round_ct(level, r, n, val);
+        }
+        val
+    }
+
+    pub fn forward(&self, x: u64) -> u64 {
+        use crate::constant_time::{ct_ge_u64, ct_select_u64};
+
+        debug_assert!(x < self.domain, "x must be < domain");
+        let mut val = x % self.domain;
+        let mut n = self.domain;
+        let mut result = 0u64;
+        let mut done = 0u64;
+
+        for level in 0..self.max_levels {
+            let should_skip = ct_ge_u64(1, n) | done;
+
+            val = ct_select_u64(
+                should_skip,
+                val,
+                self.apply_rounds_forward(level, n, val),
+            );
+
+            let half = n / 2;
+            let exited = ct_ge_u64(val, half);
+            result = ct_select_u64(exited & (1 - done), val, result);
+            done |= exited;
+
+            n = ct_select_u64(should_skip, n, half);
+        }
+
+        ct_select_u64(done, result, val)
+    }
+
+    pub fn inverse(&self, y: u64) -> u64 {
+        use crate::constant_time::{ct_eq_u64, ct_ge_u64, ct_gt_u64, ct_lt_u64, ct_select_u64};
+
+        debug_assert!(y < self.domain, "y must be < domain");
+        let y = y % self.domain;
+
+        let mut sizes = [0u64; 64];
+        let mut n = self.domain;
+        let mut stopped: u64 = 0;
+
+        for i in 0..self.max_levels {
+            let should_record = ct_gt_u64(n, 1) & ct_eq_u64(stopped, 0);
+            sizes[i] = ct_select_u64(should_record, n, 0);
+
+            let half = n / 2;
+            let y_in_right = ct_ge_u64(y, half);
+            let stopping_now = should_record & y_in_right;
+            stopped = ct_select_u64(stopping_now, 1, stopped);
+
+            n = ct_select_u64(should_record & ct_eq_u64(stopped, 0), half, n);
+        }
+
+        let mut val = y;
+        for level in (0..self.max_levels).rev() {
+            let n_lvl = sizes[level];
+            let skip = ct_lt_u64(n_lvl, 2);
+            val = ct_select_u64(skip, val, self.apply_rounds_inverse(level, n_lvl, val));
+        }
+        val
+    }
+}
+
 /// Constant-time SwapOrNot PRP for TEE execution
 ///
 /// Functionally equivalent to SwapOrNot but uses branchless operations
@@ -204,11 +483,12 @@ pub const MAX_PREIMAGES: usize = 512;
 ///
 /// Functionally equivalent to Iprf but uses branchless operations and
 /// fixed iteration counts to prevent timing side-channels.
+/// Uses SwapOrNotSrTee for full-domain PRP security.
 pub struct IprfTee {
     #[allow(dead_code)]
     key: PrfKey128,
     cipher: Aes128,
-    prp: SwapOrNotTee,
+    prp: SwapOrNotSrTee,
     domain: u64,
     range: u64,
     tree_depth: usize,
@@ -226,7 +506,7 @@ impl IprfTee {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNotTee::new(prp_key, n);
+        let prp = SwapOrNotSrTee::new(prp_key, n);
 
         Self {
             key,
@@ -370,12 +650,14 @@ impl IprfTee {
     }
 }
 
-/// Invertible PRF built from Swap-or-Not PRP + PMNS
+/// Invertible PRF built from Sometimes-Recurse PRP + PMNS
+///
+/// Uses SwapOrNotSr for full-domain PRP security (secure even when all N elements queried).
 pub struct Iprf {
     #[allow(dead_code)]
     key: PrfKey128,
     cipher: Aes128,
-    prp: SwapOrNot,
+    prp: SwapOrNotSr,
     domain: u64,
     range: u64,
     _tree_depth: usize,
@@ -386,7 +668,7 @@ impl Iprf {
     ///
     /// The constructor derives an internal AES-128 cipher from `key`, computes the PMNS
     /// tree depth as ceil(log2(m)), and derives a separate 128-bit key (SHA-256(key || "prp"))
-    /// to initialize the internal Swap-or-Not PRP over the input domain `n`.
+    /// to initialize the internal Sometimes-Recurse PRP over the input domain `n`.
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
@@ -399,7 +681,7 @@ impl Iprf {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNot::new(prp_key, n);
+        let prp = SwapOrNotSr::new(prp_key, n);
 
         Self {
             key,
@@ -764,6 +1046,74 @@ mod tests {
             let preimages = iprf.inverse(y);
             let preimages_tee = iprf_tee.inverse(y);
             assert_eq!(preimages, preimages_tee, "inverse mismatch at y={}", y);
+        }
+    }
+
+    #[test]
+    fn test_swap_or_not_sr_inverse() {
+        let key = [5u8; 16];
+        let domain = 100u64;
+        let prp = SwapOrNotSr::new(key, domain);
+
+        for x in 0..domain {
+            let y = prp.forward(x);
+            let x_recovered = prp.inverse(y);
+            assert_eq!(x, x_recovered, "SR inverse failed for x={}", x);
+        }
+    }
+
+    #[test]
+    fn test_swap_or_not_sr_is_permutation() {
+        let key = [6u8; 16];
+        let domain = 64u64;
+        let prp = SwapOrNotSr::new(key, domain);
+
+        let mut outputs: Vec<u64> = (0..domain).map(|x| prp.forward(x)).collect();
+        outputs.sort();
+        outputs.dedup();
+        assert_eq!(
+            outputs.len(),
+            domain as usize,
+            "SR PRP is not a permutation"
+        );
+    }
+
+    #[test]
+    fn test_swap_or_not_sr_tee_matches_standard() {
+        let key = [7u8; 16];
+        let domain = 64u64;
+        let prp = SwapOrNotSr::new(key, domain);
+        let prp_tee = SwapOrNotSrTee::new(key, domain);
+
+        for x in 0..domain {
+            assert_eq!(
+                prp.forward(x),
+                prp_tee.forward(x),
+                "SR TEE forward mismatch at x={}",
+                x
+            );
+        }
+
+        for y in 0..domain {
+            assert_eq!(
+                prp.inverse(y),
+                prp_tee.inverse(y),
+                "SR TEE inverse mismatch at y={}",
+                y
+            );
+        }
+    }
+
+    #[test]
+    fn test_swap_or_not_sr_tee_inverse_roundtrip() {
+        let key = [8u8; 16];
+        let domain = 100u64;
+        let prp_tee = SwapOrNotSrTee::new(key, domain);
+
+        for x in 0..domain {
+            let y = prp_tee.forward(x);
+            let x_recovered = prp_tee.inverse(y);
+            assert_eq!(x, x_recovered, "SR TEE inverse roundtrip failed for x={}", x);
         }
     }
 }

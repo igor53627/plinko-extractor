@@ -1,0 +1,85 @@
+{
+  "video_id": "okJaBn7ZXnc",
+  "url": "https://www.youtube.com/watch?v=okJaBn7ZXnc",
+  "title": "Plinko: Single-Server PIR with Efficient Updates via Invertible PRFs",
+  "speaker": "Alex Hoover",
+  "conference": "Crypto Seminar",
+  "coauthors": ["Server", "Giuseppe", "Kevin"],
+  "extracted_via": "Gemini 2.0 Flash API",
+  "extraction_date": "2025-12-12",
+  "referenced_in_issue": "https://github.com/igor53627/plinko-extractor/issues/40#issuecomment-3640449842",
+  
+  "key_segments": {
+    "full_domain_security_requirement": {
+      "timestamp_range": "45:30-46:40",
+      "speaker": "Alex Hoover",
+      "quote": "So we need the PRP to be secure over the entire domain. So the reason for this is that we're using hints across multiple queries. So if the PRP is only secure over a subset, then the adversary can learn information about the hints that are used in other queries. So we need the PRP to be secure over the entire domain.",
+      "implication": "Plinko requires PRP full-domain security because hints are reused across queries. Any weakness in PRP security over a subset allows adversarial inference about other queries."
+    }
+  },
+
+  "transcript_segments": [
+    {
+      "timestamp": "00:03",
+      "text": "Welcome to the crypto seminar everyone. Today we have Alex. He will be presenting his work on Plinko, single server PIR with efficient updates via invertible PRFs. This is his joint work with Server, Giuseppe and Kevin. Let's welcome."
+    },
+    {
+      "timestamp": "00:25",
+      "text": "Thanks. Yeah, so we can start. I'll be talking about Plinko. This is a recent paper that was published. If there are any questions at all throughout the talk, feel free to interrupt. It's not a super long talk and I'd rather people understand what's on the slides than anything else. I don't have my presenter notes, so hopefully I remember everything. That's just a disclaimer. Okay, without further ado, let's get into what I'll be talking about."
+    },
+    {
+      "timestamp": "00:48",
+      "text": "So here's kind of the outline. I'll just first start with some preliminaries, talk about what PIR is, what preprocessing is, and then I'll recall the definition of PRFs and PRPs because we're going to build an invertible PRF later. And then I'll talk about some prior work and then I'll talk about how we pretty much directly work off of prior work and improve it specifically. And then sections three and four will be the bulk of what's novel in the paper."
+    },
+    {
+      "timestamp": "01:16",
+      "text": "Okay, so let's jump into what information retrieval is. So here there's no cryptography going on here. This is just information retrieval. So the setting we care about is where a client is interested in learning a specific element of an array that I'll call a database. So in a setting where they don't care about privacy, they can just send the element index X to the server holding the database. There's no encryption going on, these are publicly accessible information. Then the database can just send back the relevant information. You can think of this as like a DNS lookup or like accessing stock information or just accessing a web page from some public web service or like maybe some public database like a voter registration. However, the client wishes to avoid revealing what element they're interested in."
+    },
+    {
+      "timestamp": "02:38",
+      "text": "If a client doesn't want to reveal the specific information they're interested in like they maybe don't want you knowing which stock they're looking up, we can use a tool called private information retrieval. This was introduced in the 90s and here the client and the server engage in some protocol and at the end of the protocol, the client should learn the information that they're interested in DB at X and the server should have no idea what index the client is interested in. And here when I say that the server learns nothing about the queried index, I'm meaning it in a computational sense."
+    },
+    {
+      "timestamp": "04:18",
+      "text": "So unfortunately, as written here, we already run into an efficiency bottleneck for a protocol like this to be truly private. The server is going to have to read its entire database every time that the client issues a query. You can see this because if there's any element of the database that the server didn't touch when it's running the protocol, then they can infer that the client was not interested in that specific element and that violates the privacy that we want."
+    },
+    {
+      "timestamp": "04:51",
+      "text": "So one solution to try to get around this efficiency bottleneck is preprocessing. Specifically, I'll talk about client side preprocessing. So here we let the client interact with the server in an offline phase and they engage in some offline protocol. This is before the client knows the index that they're interested in. And then in the online phase later, the client will learn or know what index they're interested in and they can use this set of hints or this small bit of data that they've computed in the offline phase to perform an online query. Hopefully this online query is a lot faster than in the traditional PIR setting. This is something that was introduced in 2000 and then kind of reintroduced in like 2018 and 19."
+    },
+    {
+      "timestamp": "05:31",
+      "text": "So efficiency in the setting: in the offline phase we still have to incur like a linear computation. The server is going to be able to read everything and in particular what we'll talk about is we'll have the server actually just send the entire database to the client in a streaming fashion. And then in the online phase, the hope is that we achieve sublinear computation both between the client and the server. So maybe it's like square root n you can think about."
+    },
+    {
+      "timestamp": "06:40",
+      "text": "In our new paper we have a technique called broken hint and we don't need these backup hints anymore."
+    },
+    {
+      "timestamp": "06:52",
+      "text": "It's not critical. It's critical to piano and MIR. Let's go with that."
+    },
+    {
+      "timestamp": "07:29",
+      "text": "So the client... I'm not claiming that we got rid of the log factor. I'm claiming that previous work did not achieve this tradeoff for R bigger than square root N. So if you're familiar with the bound, what shows is that client storage times server time is at least n. And this was only previously matched for R less than square root N."
+    },
+    {
+      "timestamp": "08:18",
+      "text": "If you have to find the hints like one hint by one hint, that costs a little bit more."
+    },
+    {
+      "timestamp": "45:30",
+      "text": "So we need the PRP to be secure over the entire domain. So the reason for this is that we're using hints across multiple queries. So if the PRP is only secure over a subset, then the adversary can learn information about the hints that are used in other queries. So we need the PRP to be secure over the entire domain."
+    },
+    {
+      "timestamp": "46:40",
+      "text": "Are there any more questions? Let's thank our speaker."
+    }
+  ],
+
+  "technical_insights": {
+    "prp_full_domain_security": "The PRP must be secure against an adversary that can query the entire domain [0, N), not just a subset. This is because a single set of hints is used across many queries, so the adversary accumulates PRP evaluations over time.",
+    "hint_reuse_security_model": "Unlike single-query PIR, Plinko's preprocessing model means the same hints are used repeatedly. The security proof requires that the PRP remain indistinguishable from random even when the adversary sees outputs for all domain elements.",
+    "implementation_implication": "Any small-domain PRP construction (like Morris-Rogaway Swap-or-Not) must provide security for the full domain, not just partial-domain security. The number of rounds must be sufficient to achieve this."
+  }
+}
