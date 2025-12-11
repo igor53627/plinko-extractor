@@ -14,3 +14,7 @@ plinko/formal/.lia.cache
 plinko/formal/.nia.cache
 plinko/formal/.depend
 plinko/formal/artifacts/
+
+# Regression data binaries (keep local, not in repo)
+regression-data/*.bin
+regression-data/*.part*
