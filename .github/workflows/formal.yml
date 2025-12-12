@@ -164,10 +164,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v15: fork with links/M.v Set->Type fixes
-          key: rocq-of-rust-fork-${{ runner.os }}-v15
+          # v16: fork with Smpl commented out in links/M.v
+          key: rocq-of-rust-fork-${{ runner.os }}-v16
           restore-keys: |
-            rocq-of-rust-fork-${{ runner.os }}-v15
+            rocq-of-rust-fork-${{ runner.os }}-v16
 
       - name: Install opam
         run: |
