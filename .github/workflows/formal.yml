@@ -164,10 +164,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v9: fork with Closure (Set*Set) -> (Type*Type) fix
-          key: rocq-of-rust-fork-${{ runner.os }}-v9
+          # v10: fork with simplified Closure (no sigS)
+          key: rocq-of-rust-fork-${{ runner.os }}-v10
           restore-keys: |
-            rocq-of-rust-fork-${{ runner.os }}-v9
+            rocq-of-rust-fork-${{ runner.os }}-v10
 
       - name: Install opam
         run: |
