@@ -164,10 +164,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v6: fork with optional deps removed from M.v
-          key: rocq-of-rust-fork-${{ runner.os }}-v6
+          # v7: fork with sigS universe fix for Rocq 9.x
+          key: rocq-of-rust-fork-${{ runner.os }}-v7
           restore-keys: |
-            rocq-of-rust-fork-${{ runner.os }}-v6
+            rocq-of-rust-fork-${{ runner.os }}-v7
 
       - name: Install opam
         run: |
