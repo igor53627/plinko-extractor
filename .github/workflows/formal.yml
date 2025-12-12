@@ -164,10 +164,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v13: fork with bypass_check(positivity) for Value.t
-          key: rocq-of-rust-fork-${{ runner.os }}-v13
+          # v14: fork with lib/lib.v Set->Type fixes
+          key: rocq-of-rust-fork-${{ runner.os }}-v14
           restore-keys: |
-            rocq-of-rust-fork-${{ runner.os }}-v13
+            rocq-of-rust-fork-${{ runner.os }}-v14
 
       - name: Install opam
         run: |
