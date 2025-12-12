@@ -16,7 +16,7 @@ COQFLAGS_LINKING := -R $(ROCQOFRUST_PATH) RocqOfRust -Q sims Plinko.Sims -Q src 
 COQFLAGS_TRANS := -R $(ROCQOFRUST_PATH) RocqOfRust -Q src src
 
 # Source files
-SPEC_FILES := specs/CommonTypes.v specs/DbSpec.v specs/BinomialSpec.v specs/SwapOrNotSpec.v specs/IprfSpec.v
+SPEC_FILES := specs/CommonTypes.v specs/DbSpec.v specs/BinomialSpec.v specs/SwapOrNotSpec.v specs/SwapOrNotSrSpec.v specs/IprfSpec.v
 SIM_FILES := $(wildcard sims/*.v)
 PROOF_FILES := $(wildcard proofs/*.v)
 TRANS_FILES := $(wildcard src/*.v)
@@ -82,6 +82,7 @@ linking/%.vo: linking/%.v
 specs/DbSpec.vo: specs/CommonTypes.vo
 specs/BinomialSpec.vo: specs/CommonTypes.vo
 specs/SwapOrNotSpec.vo: specs/CommonTypes.vo
+specs/SwapOrNotSrSpec.vo: specs/CommonTypes.vo specs/SwapOrNotSpec.vo
 specs/IprfSpec.vo: specs/CommonTypes.vo specs/BinomialSpec.vo
 
 # Explicit dependencies for proofs
