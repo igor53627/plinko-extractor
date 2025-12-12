@@ -164,10 +164,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v18: improved smpl fallback that actually solves proofs
-          key: rocq-of-rust-fork-${{ runner.os }}-v18
+          # v19: smpl with cbn/simpl before reflexivity
+          key: rocq-of-rust-fork-${{ runner.os }}-v19
           restore-keys: |
-            rocq-of-rust-fork-${{ runner.os }}-v18
+            rocq-of-rust-fork-${{ runner.os }}-v19
 
       - name: Install opam
         run: |
