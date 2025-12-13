@@ -64,31 +64,26 @@ jobs:
           ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
           # Create compatibility wrappers for tools that expect Coq-style CLIs.
           # Rocq 9.x uses `rocq <subcommand>` instead of separate binaries.
-          rm -f /home/runner/.opam/rocq-9/bin/coqc
           cat > /home/runner/.opam/rocq-9/bin/coqc <<'EOF'
           #!/usr/bin/env bash
           exec rocq compile "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqc
-          rm -f /home/runner/.opam/rocq-9/bin/rocqc
           cat > /home/runner/.opam/rocq-9/bin/rocqc <<'EOF'
           #!/usr/bin/env bash
           exec rocq compile "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqc
-          rm -f /home/runner/.opam/rocq-9/bin/coqdep
           cat > /home/runner/.opam/rocq-9/bin/coqdep <<'EOF'
           #!/usr/bin/env bash
           exec rocq dep "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqdep
-          rm -f /home/runner/.opam/rocq-9/bin/rocqdep
           cat > /home/runner/.opam/rocq-9/bin/rocqdep <<'EOF'
           #!/usr/bin/env bash
           exec rocq dep "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqdep
-          rm -f /home/runner/.opam/rocq-9/bin/coq_makefile
           cat > /home/runner/.opam/rocq-9/bin/coq_makefile <<'EOF'
           #!/usr/bin/env bash
           exec rocq makefile "$@"
@@ -99,9 +94,9 @@ jobs:
         run: |
           echo "Checking rocq binary..."
           which rocq || echo "rocq not found"
-          timeout 30 rocq --version || echo "rocq --version failed"
+          rocq --version || echo "rocq --version failed"
           # Verify compile subcommand works
-          timeout 30 rocq compile --version || timeout 30 rocq -v || echo "rocq compile check failed"
+          rocq compile --version || rocq -v || echo "rocq compile check failed"
 
       - name: Build Rocq specs and proofs
         run: |
@@ -218,31 +213,26 @@ jobs:
           ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
           # Create compatibility wrappers for tools that expect Coq-style CLIs.
           # Rocq 9.x uses `rocq <subcommand>` instead of separate binaries.
-          rm -f /home/runner/.opam/rocq-9/bin/coqc
           cat > /home/runner/.opam/rocq-9/bin/coqc <<'EOF'
           #!/usr/bin/env bash
           exec rocq compile "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqc
-          rm -f /home/runner/.opam/rocq-9/bin/rocqc
           cat > /home/runner/.opam/rocq-9/bin/rocqc <<'EOF'
           #!/usr/bin/env bash
           exec rocq compile "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqc
-          rm -f /home/runner/.opam/rocq-9/bin/coqdep
           cat > /home/runner/.opam/rocq-9/bin/coqdep <<'EOF'
           #!/usr/bin/env bash
           exec rocq dep "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqdep
-          rm -f /home/runner/.opam/rocq-9/bin/rocqdep
           cat > /home/runner/.opam/rocq-9/bin/rocqdep <<'EOF'
           #!/usr/bin/env bash
           exec rocq dep "$@"
           EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqdep
-          rm -f /home/runner/.opam/rocq-9/bin/coq_makefile
           cat > /home/runner/.opam/rocq-9/bin/coq_makefile <<'EOF'
           #!/usr/bin/env bash
           exec rocq makefile "$@"
@@ -276,39 +266,7 @@ jobs:
           
           cd ~/rocq-of-rust
           git fetch origin "$FORK_BRANCH"
-          # Cached builds may leave the working tree dirty; force checkout for a clean baseline.
-          git checkout -f "origin/$FORK_BRANCH"
-
-          # Hotfix: keep OfTy/OfValue quantifying over Type (needed for pointers/refs in links/M.v).
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("RocqOfRust/links/M.v")
-          text = path.read_text()
-
-          replacements = {
-              "| Make {A : Set} `{Link A} :": "| Make {A : Type} `{Link A} :",
-              "Definition of_ty {A : Set} `{Link A} :": "Definition of_ty {A : Type} `{Link A} :",
-              "| Make {A : Set} `{Link A} (value : A) :": "| Make {A : Type} `{Link A} (value : A) :",
-              "Definition of_value {A : Set} `{Link A} (value : A) :": "Definition of_value {A : Type} `{Link A} (value : A) :",
-          }
-
-          missing = [old for old in replacements if old not in text]
-          if len(missing) == len(replacements):
-              # Either already patched upstream, or the file has drifted.
-              if all(new in text for new in replacements.values()):
-                  print(f"No patch needed for {path} (already uses Type).")
-                  raise SystemExit(0)
-              raise SystemExit(
-                  f"Unexpected {path} contents: expected either Set- or Type-based OfTy/OfValue binders."
-              )
-
-          for old, new in replacements.items():
-              text = text.replace(old, new)
-
-          path.write_text(text)
-          print(f"Patched {path} (Set -> Type in OfTy/OfValue)")
-          PY
+          git checkout "origin/$FORK_BRANCH"
           
           if [ ! -f target/release/rocq-of-rust ]; then
             echo "Building rocq-of-rust..."
@@ -317,11 +275,12 @@ jobs:
             echo "Using cached rocq-of-rust binary"
           fi
 
-      - name: Build minimal RocqOfRust library
+      - name: Build RocqOfRust library
         run: |
           cd ~/rocq-of-rust/RocqOfRust
-          echo "Building minimal RocqOfRust library (needed by Plinko linking)..."
-          make -j2 links/M.vo || make links/M.vo
+          # Always rebuild if Makefile changed (fork has Rocq 9.x fix)
+          echo "Building RocqOfRust library..."
+          make -j2 || make
 
       - name: Translate Rust to Rocq
         id: translate
