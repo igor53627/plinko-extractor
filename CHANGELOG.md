@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **TEE constant-time exact binomial sampler** (`binomial_sample_tee`): Issue #41 fix
+  - True Binomial(n,p) distribution using inverse-CDF with fixed iterations
+  - O(n) complexity with constant-time float comparison and selection
+  - No branches depend on `prf_output` (secret-derived value)
+  - Uses `ct_f64_le` for constant-time IEEE 754 float comparison
+  - Threshold: count <= 4096 (falls back to approximation for larger counts)
+  - `IprfTee` now uses `binomial_sample_tee` for TEE-safe execution
+  - `IprfTee::new` asserts `n <= CT_BINOMIAL_MAX_COUNT` to prevent fallback
+  - `IprfTee::inverse_ct` uses constant-time min for MAX_PREIMAGES clamping
+  - Non-TEE `Iprf` continues to use standard binomial sampler
 - **Sometimes-Recurse PRP** (`SwapOrNotSr`, `SwapOrNotSrTee`): Morris-Rogaway Fig. 1 wrapper for full-domain security
   - Level-aware key derivation with proper domain separation
   - Paper-faithful round counts: `t_N = ceil(7.23 lg N + 4.82 lambda + 4.82 lg p)` per Morris-Rogaway Eq. (2)
@@ -20,18 +30,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - **iPRF**: `Iprf` and `IprfTee` now use `SwapOrNotSr`/`SwapOrNotSrTee` instead of plain `SwapOrNot` for full-domain security
-
-### Fixed
-
-- **SR round counts**: Implemented paper-faithful per-stage epsilon-budget schedule (Morris-Rogaway Section 5, Strategy 1) for provable 128-bit security; previous heuristic had no proven bound
-
-### Changed
-
 - **Hint storage**: Hints now store a 32-byte seed instead of explicit block lists, significantly reducing memory footprint
 - **Block count (c)**: Auto-bumped to even if odd (required for security proof); hard assertion enforced in production mode
 - **Padding**: Replace `find_nearest_divisor` with padding - DB is padded with dummy zero entries instead of truncating tail entries
 - **CLI**: `--allow-truncation` is now hidden (debug-only flag that violates security assumptions)
 - **CLI docs**: Fixed description for `--entries-per-block` to reflect padding behavior
+
+### Fixed
+
+- **SR round counts**: Implemented paper-faithful per-stage epsilon-budget schedule (Morris-Rogaway Section 5, Strategy 1) for provable 128-bit security; previous heuristic had no proven bound
 
 ### Added
 
