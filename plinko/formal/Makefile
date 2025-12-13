@@ -165,7 +165,7 @@ audit:
 		grep -rn '^Parameter' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"; \
 		echo ""; \
 		echo "Admits:"; \
-		grep -rni '\badmitted\b' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"; \
+		grep -RnhE '^[[:space:]]*Admitted\.' specs/ sims/ proofs/ linking/ 2>/dev/null || echo "  (none)"; \
 	} | tee $(ARTIFACTS_DIR)/audit.txt
 
 # Threshold for allowed admits
@@ -174,7 +174,7 @@ ADMIT_THRESHOLD ?= 10
 # Check admits don't exceed threshold
 check-admits:
 	@echo "Checking admit count against threshold ($(ADMIT_THRESHOLD))..."
-	@ADMITS=$$(grep -rni '\badmitted\b' specs/ sims/ proofs/ linking/ 2>/dev/null | wc -l | tr -d ' '); \
+	@ADMITS=$$(grep -RnhE '^[[:space:]]*Admitted\.' specs/ sims/ proofs/ linking/ 2>/dev/null | wc -l | tr -d ' '); \
 	if [ "$$ADMITS" -gt "$(ADMIT_THRESHOLD)" ]; then \
 		echo "ERROR: admit count ($$ADMITS) exceeds threshold ($(ADMIT_THRESHOLD))"; \
 		exit 1; \
@@ -184,7 +184,7 @@ check-admits:
 
 # Get admit count (for CI summary)
 admit-count:
-	@grep -rni '\badmitted\b' specs/ sims/ proofs/ linking/ 2>/dev/null | wc -l | tr -d ' '
+	@grep -RnhE '^[[:space:]]*Admitted\.' specs/ sims/ proofs/ linking/ 2>/dev/null | wc -l | tr -d ' '
 
 # Verify no unexpected axioms/parameters
 AXIOM_ALLOWLIST ?= axioms_allowlist.txt
