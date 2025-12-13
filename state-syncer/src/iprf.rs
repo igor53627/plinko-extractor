@@ -572,6 +572,10 @@ pub struct IprfTee {
 
 impl IprfTee {
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
+        Self::with_security(key, n, m, DEFAULT_SECURITY_BITS)
+    }
+
+    pub fn with_security(key: PrfKey128, n: u64, m: u64, security_bits: u32) -> Self {
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
 
@@ -582,7 +586,7 @@ impl IprfTee {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNotSrTee::new(prp_key, n);
+        let prp = SwapOrNotSrTee::with_security(prp_key, n, security_bits);
 
         Self {
             key,
@@ -647,6 +651,8 @@ impl IprfTee {
         let mut ball_start = 0u64;
 
         for _level in 0..self.tree_depth {
+            debug_assert!(ball_count <= crate::binomial::CT_BINOMIAL_MAX_COUNT);
+
             let should_continue = ct_lt_u64(low, high);
 
             let mid = (low + high) / 2;
@@ -694,6 +700,8 @@ impl IprfTee {
         let mut ball_index = x_prime;
 
         while low < high {
+            debug_assert!(ball_count <= crate::binomial::CT_BINOMIAL_MAX_COUNT);
+
             let mid = (low + high) / 2;
             let left_bins = mid - low + 1;
             let total_bins = high - low + 1;
@@ -749,10 +757,13 @@ impl Iprf {
     /// tree depth as ceil(log2(m)), and derives a separate 128-bit key (SHA-256(key || "prp"))
     /// to initialize the internal Sometimes-Recurse PRP over the input domain `n`.
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
+        Self::with_security(key, n, m, DEFAULT_SECURITY_BITS)
+    }
+
+    pub fn with_security(key: PrfKey128, n: u64, m: u64, security_bits: u32) -> Self {
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
 
-        // Derive a separate key for PRP from main key
         let mut prp_key = [0u8; 16];
         let mut hasher = Sha256::new();
         hasher.update(&key);
@@ -760,7 +771,7 @@ impl Iprf {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNotSr::new(prp_key, n);
+        let prp = SwapOrNotSr::with_security(prp_key, n, security_bits);
 
         Self {
             key,
@@ -1336,5 +1347,63 @@ mod tests {
             domain as usize,
             "SR PRP is not a permutation"
         );
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 64,
+            .. ProptestConfig::default()
+        })]
+
+        #[test]
+        fn iprf_tee_forward_matches_standard(
+            key in any::<[u8; 16]>(),
+            n in 1u64..513,
+            m_raw in 1u64..513,
+            x_raw in any::<u64>(),
+        ) {
+            let m = m_raw.min(n);
+            let x = x_raw % n;
+
+            let iprf = Iprf::with_security(key, n, m, 32);
+            let iprf_tee = IprfTee::with_security(key, n, m, 32);
+
+            let y = iprf.forward(x);
+            let y_tee = iprf_tee.forward(x);
+
+            prop_assert_eq!(y, y_tee, "forward mismatch at x={}, n={}, m={}", x, n, m);
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 32,
+            .. ProptestConfig::default()
+        })]
+
+        #[test]
+        fn iprf_tee_inverse_matches_standard(
+            key in any::<[u8; 16]>(),
+            n in 1u64..65,
+            m_raw in 1u64..65,
+            y_raw in any::<u64>(),
+        ) {
+            let m = m_raw.min(n);
+            let y = y_raw % m;
+
+            let iprf = Iprf::with_security(key, n, m, 32);
+            let iprf_tee = IprfTee::with_security(key, n, m, 32);
+
+            let mut preimages = iprf.inverse(y);
+            let mut preimages_tee = iprf_tee.inverse(y);
+
+            preimages.sort_unstable();
+            preimages_tee.sort_unstable();
+
+            prop_assert_eq!(
+                preimages, preimages_tee,
+                "inverse mismatch at y={}, n={}, m={}", y, n, m
+            );
+        }
     }
 }
