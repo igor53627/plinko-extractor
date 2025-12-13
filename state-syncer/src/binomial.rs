@@ -12,6 +12,10 @@
 /// Below this, we use exact PMF summation. Above, we use binary search with beta function.
 const EXACT_THRESHOLD: u64 = 1024;
 
+/// Maximum ball count supported by constant-time binomial sampling in TEE mode.
+/// TEE implementations must ensure ball_count never exceeds this threshold.
+pub const CT_BINOMIAL_MAX_COUNT: u64 = EXACT_THRESHOLD;
+
 /// Maximum value of u64 as f64 for normalization
 const U64_MAX_F64: f64 = u64::MAX as f64;
 

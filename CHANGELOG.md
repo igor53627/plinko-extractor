@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Configurable security parameter (default 128-bit)
   - `with_security(key, domain, security_bits)` constructor for explicit security level
 - **Constant-time utilities**: Added `ct_ge_u64` for branchless greater-or-equal comparison
+- **TEE hardening tests**: Property tests verifying `Iprf == IprfTee` for forward/inverse operations
+- **TEE debug asserts**: `ball_count <= CT_BINOMIAL_MAX_COUNT` invariant checks in PMNS methods
 - **Formal verification**: `SwapOrNotSrSpec.v` with Rocq proofs for SR round involution, range preservation, and bijection properties
 - **Documentation**: Alex Hoover talk transcript explaining full-domain PRP requirement for Plinko hint reuse security
 
