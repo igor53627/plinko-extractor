@@ -66,33 +66,33 @@ jobs:
           # Rocq 9.x uses `rocq <subcommand>` instead of separate binaries.
           rm -f /home/runner/.opam/rocq-9/bin/coqc
           cat > /home/runner/.opam/rocq-9/bin/coqc <<'EOF'
-#!/usr/bin/env bash
-exec rocq compile "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqc
           rm -f /home/runner/.opam/rocq-9/bin/rocqc
           cat > /home/runner/.opam/rocq-9/bin/rocqc <<'EOF'
-#!/usr/bin/env bash
-exec rocq compile "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqc
           rm -f /home/runner/.opam/rocq-9/bin/coqdep
           cat > /home/runner/.opam/rocq-9/bin/coqdep <<'EOF'
-#!/usr/bin/env bash
-exec rocq dep "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqdep
           rm -f /home/runner/.opam/rocq-9/bin/rocqdep
           cat > /home/runner/.opam/rocq-9/bin/rocqdep <<'EOF'
-#!/usr/bin/env bash
-exec rocq dep "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqdep
           rm -f /home/runner/.opam/rocq-9/bin/coq_makefile
           cat > /home/runner/.opam/rocq-9/bin/coq_makefile <<'EOF'
-#!/usr/bin/env bash
-exec rocq makefile "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq makefile "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Verify Rocq installation
@@ -220,33 +220,33 @@ EOF
           # Rocq 9.x uses `rocq <subcommand>` instead of separate binaries.
           rm -f /home/runner/.opam/rocq-9/bin/coqc
           cat > /home/runner/.opam/rocq-9/bin/coqc <<'EOF'
-#!/usr/bin/env bash
-exec rocq compile "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqc
           rm -f /home/runner/.opam/rocq-9/bin/rocqc
           cat > /home/runner/.opam/rocq-9/bin/rocqc <<'EOF'
-#!/usr/bin/env bash
-exec rocq compile "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqc
           rm -f /home/runner/.opam/rocq-9/bin/coqdep
           cat > /home/runner/.opam/rocq-9/bin/coqdep <<'EOF'
-#!/usr/bin/env bash
-exec rocq dep "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coqdep
           rm -f /home/runner/.opam/rocq-9/bin/rocqdep
           cat > /home/runner/.opam/rocq-9/bin/rocqdep <<'EOF'
-#!/usr/bin/env bash
-exec rocq dep "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/rocqdep
           rm -f /home/runner/.opam/rocq-9/bin/coq_makefile
           cat > /home/runner/.opam/rocq-9/bin/coq_makefile <<'EOF'
-#!/usr/bin/env bash
-exec rocq makefile "$@"
-EOF
+          #!/usr/bin/env bash
+          exec rocq makefile "$@"
+          EOF
           chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Install Rust nightly
