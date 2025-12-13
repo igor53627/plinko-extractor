@@ -94,9 +94,9 @@ jobs:
         run: |
           echo "Checking rocq binary..."
           which rocq || echo "rocq not found"
-          rocq --version || echo "rocq --version failed"
+          timeout 30 rocq --version || echo "rocq --version failed"
           # Verify compile subcommand works
-          rocq compile --version || rocq -v || echo "rocq compile check failed"
+          timeout 30 rocq compile --version || timeout 30 rocq -v || echo "rocq compile check failed"
 
       - name: Build Rocq specs and proofs
         run: |
@@ -296,4 +296,3 @@ jobs:
           make clean
           make ROCQOFRUST_PATH="$HOME/rocq-of-rust/RocqOfRust" all
           make ROCQOFRUST_PATH="$HOME/rocq-of-rust/RocqOfRust" linking
-
