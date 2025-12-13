@@ -62,12 +62,33 @@ jobs:
           # Debug: show available binaries
           echo "Available binaries in opam switch:"
           ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
-          # Create compatibility symlinks (Rocq 9.x uses 'rocq' binary with subcommands)
-          # rocq compile = coqc, rocq dep = coqdep, rocq makefile = coq_makefile
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqdep || true
+          # Create compatibility wrappers for tools that expect Coq-style CLIs.
+          # Rocq 9.x uses `rocq <subcommand>` instead of separate binaries.
+          cat > /home/runner/.opam/rocq-9/bin/coqc <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coqc
+          cat > /home/runner/.opam/rocq-9/bin/rocqc <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/rocqc
+          cat > /home/runner/.opam/rocq-9/bin/coqdep <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coqdep
+          cat > /home/runner/.opam/rocq-9/bin/rocqdep <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/rocqdep
+          cat > /home/runner/.opam/rocq-9/bin/coq_makefile <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq makefile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Verify Rocq installation
         run: |
@@ -190,12 +211,33 @@ jobs:
           # Debug: show available binaries
           echo "Available binaries in opam switch:"
           ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
-          # Create compatibility symlinks (Rocq 9.x uses 'rocq' binary with subcommands)
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coq_makefile || true
+          # Create compatibility wrappers for tools that expect Coq-style CLIs.
+          # Rocq 9.x uses `rocq <subcommand>` instead of separate binaries.
+          cat > /home/runner/.opam/rocq-9/bin/coqc <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coqc
+          cat > /home/runner/.opam/rocq-9/bin/rocqc <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq compile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/rocqc
+          cat > /home/runner/.opam/rocq-9/bin/coqdep <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coqdep
+          cat > /home/runner/.opam/rocq-9/bin/rocqdep <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq dep "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/rocqdep
+          cat > /home/runner/.opam/rocq-9/bin/coq_makefile <<'EOF'
+          #!/usr/bin/env bash
+          exec rocq makefile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master
@@ -254,5 +296,4 @@ jobs:
           make clean
           make ROCQOFRUST_PATH="$HOME/rocq-of-rust/RocqOfRust" all
           make ROCQOFRUST_PATH="$HOME/rocq-of-rust/RocqOfRust" linking
-
 
