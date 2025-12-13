@@ -68,7 +68,7 @@ When modifying Rust code in `state-syncer/`, ALWAYS verify changes don't break a
    - `BackupHint`: block subset of c/2, dual parities (in/out)
    - `hint_init`, `process_db_entry` logic must match
 
-3. **Rocq proofs** (`state-syncer/formal/`)
+3. **Rocq proofs** (`plinko/formal/`)
    - `specs/*.v`: iPRF, SwapOrNot, binomial specs
    - `proofs/*.v`: Verified properties
    - Do NOT change Rust semantics that would invalidate proofs
@@ -89,8 +89,8 @@ Before committing Rust changes to hint generation or iPRF:
 |------|----------|
 | Paper HintInit | `docs/plinko_paper_part6_algorithms.json` (algorithm_id: plinko_hintinit) |
 | Coq HintInit | `docs/Plinko.v` (hint_init, process_db_entry) |
-| iPRF Spec | `state-syncer/formal/specs/IprfSpec.v` |
-| PRP Spec | `state-syncer/formal/specs/SwapOrNotSpec.v` |
+| iPRF Spec | `plinko/formal/specs/IprfSpec.v` |
+| PRP Spec | `plinko/formal/specs/SwapOrNotSpec.v` |
 
 ## Devin DeepWiki
 

@@ -10,7 +10,9 @@ formal/
     CommonTypes.v  - Shared types (Z-based integers, predicates)
     DbSpec.v       - derive_plinko_params specification
     BinomialSpec.v - binomial_sample specification  
+    TrueBinomialSpec.v - inverse-CDF binomial specification
     SwapOrNotSpec.v - Swap-or-Not PRP specification
+    SwapOrNotSrSpec.v - Sometimes-Recurse PRP wrapper specification
     IprfSpec.v     - iPRF/PMNS specification
     
   proofs/          - Property proofs on specifications
@@ -84,7 +86,9 @@ Specs:
 - [x] CommonTypes
 - [x] DbSpec  
 - [x] BinomialSpec
+- [~] TrueBinomialSpec (some lemmas admitted)
 - [x] SwapOrNotSpec
+- [~] SwapOrNotSrSpec (in progress; admits/axioms)
 - [x] IprfSpec (all key lemmas proven)
 
 Proofs:

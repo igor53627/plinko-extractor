@@ -115,7 +115,7 @@ impl Database {
 ///   then rounded up to the nearest multiple of 4.
 ///
 /// This implementation uses pure integer arithmetic to match the Coq spec in
-/// `state-syncer/formal/specs/DbSpec.v` exactly, avoiding floating-point rounding issues.
+/// `plinko/formal/specs/DbSpec.v` exactly, avoiding floating-point rounding issues.
 ///
 /// # Returns
 ///
