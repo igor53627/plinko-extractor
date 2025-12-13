@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **TEE constant-time exact binomial sampler** (`binomial_sample_tee`): Issue #41 fix
+  - True Binomial(n,p) distribution using inverse-CDF with fixed iterations
+  - O(n) complexity with constant-time float comparison and selection
+  - No branches depend on `prf_output` (secret-derived value)
+  - Uses `ct_f64_le` for constant-time IEEE 754 float comparison
+  - Threshold: count <= 4096 (falls back to approximation for larger counts)
+  - `IprfTee` now uses `binomial_sample_tee` for TEE-safe execution
+  - `IprfTee::new` asserts `n <= CT_BINOMIAL_MAX_COUNT` to prevent fallback
+  - `IprfTee::inverse_ct` uses constant-time min for MAX_PREIMAGES clamping
+  - Non-TEE `Iprf` continues to use standard binomial sampler
 - **Sometimes-Recurse PRP** (`SwapOrNotSr`, `SwapOrNotSrTee`): Morris-Rogaway Fig. 1 wrapper for full-domain security
   - Level-aware key derivation with proper domain separation
   - Paper-faithful round counts: `t_N = ceil(7.23 lg N + 4.82 lambda + 4.82 lg p)` per Morris-Rogaway Eq. (2)

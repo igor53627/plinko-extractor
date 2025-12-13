@@ -571,7 +571,20 @@ pub struct IprfTee {
 }
 
 impl IprfTee {
+    /// Creates a new TEE-safe iPRF instance.
+    ///
+    /// # Panics
+    /// Panics if `n > CT_BINOMIAL_MAX_COUNT` (4096). TEE constant-time binomial
+    /// sampling requires O(n) iterations; larger domains would either leak timing
+    /// or fall back to a non-Binomial approximation.
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
+        assert!(
+            n <= crate::binomial::CT_BINOMIAL_MAX_COUNT,
+            "IprfTee requires n <= {} for constant-time binomial sampling, got n={}",
+            crate::binomial::CT_BINOMIAL_MAX_COUNT,
+            n
+        );
+
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
 
@@ -594,7 +607,12 @@ impl IprfTee {
         }
     }
 
-    /// Forward evaluation - constant-time for valid inputs.
+    /// Forward evaluation.
+    ///
+    /// # Security Note
+    /// This method is NOT constant-time: the internal `trace_ball` loop branches
+    /// on `ball_index < left_count`. For PIR query privacy, only `inverse_ct` needs
+    /// to be constant-time (the server computes inverse, not forward).
     ///
     /// # Precondition
     /// `x` must be in range `[0, domain)`. This is a precondition, not runtime-checked
@@ -617,7 +635,11 @@ impl IprfTee {
 
         let (ball_start, ball_count) = self.trace_ball_inverse_ct(y);
 
-        let count = (ball_count as usize).min(MAX_PREIMAGES);
+        // Constant-time min(ball_count, MAX_PREIMAGES) to avoid data-dependent branch
+        let max_preimages = MAX_PREIMAGES as u64;
+        let exceeds_max = ct_lt_u64(max_preimages, ball_count);
+        let count_u64 = ct_select_u64(exceeds_max, max_preimages, ball_count);
+        let count = count_u64 as usize;
         let mut result = [0u64; MAX_PREIMAGES];
 
         for i in 0..MAX_PREIMAGES {
@@ -655,8 +677,9 @@ impl IprfTee {
 
             let node_id = encode_node(low, high, self.domain);
             let prf_output = self.prf_eval(node_id);
+            // Use TEE-safe constant-time binomial sampler (matches BinomialSpec.v)
             let left_count =
-                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+                crate::binomial::binomial_sample_tee(ball_count, left_bins, total_bins, prf_output);
 
             let go_left = ct_le_u64(y, mid);
 
@@ -699,8 +722,9 @@ impl IprfTee {
             let total_bins = high - low + 1;
             let node_id = encode_node(low, high, n);
             let prf_output = self.prf_eval(node_id);
+            // Use TEE-safe constant-time binomial sampler (matches BinomialSpec.v)
             let left_count =
-                crate::binomial::binomial_sample(ball_count, left_bins, total_bins, prf_output);
+                crate::binomial::binomial_sample_tee(ball_count, left_bins, total_bins, prf_output);
 
             if ball_index < left_count {
                 high = mid;

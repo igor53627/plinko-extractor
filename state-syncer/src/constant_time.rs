@@ -41,6 +41,32 @@ pub fn ct_ge_u64(a: u64, b: u64) -> u64 {
     1 ^ ct_lt_u64(a, b)
 }
 
+/// Constant-time f64 comparison: returns 1 if a <= b, 0 otherwise.
+///
+/// Works correctly for positive normalized floats (including 0.0).
+/// For IEEE 754 positive floats, bit representation preserves ordering.
+///
+/// # Safety
+/// - Both a and b must be non-negative (>= 0.0)
+/// - Neither should be NaN
+/// - Works correctly for +0.0, positive normals, and +inf
+#[inline]
+pub fn ct_f64_le(a: f64, b: f64) -> u64 {
+    // For positive IEEE 754 floats, the bit representation as u64
+    // has the same ordering as the float values
+    let a_bits = a.to_bits();
+    let b_bits = b.to_bits();
+    ct_le_u64(a_bits, b_bits)
+}
+
+/// Constant-time f64 comparison: returns 1 if a < b, 0 otherwise.
+#[inline]
+pub fn ct_f64_lt(a: f64, b: f64) -> u64 {
+    let a_bits = a.to_bits();
+    let b_bits = b.to_bits();
+    ct_lt_u64(a_bits, b_bits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +174,41 @@ mod tests {
             let expected = if a >= b { 1 } else { 0 };
             prop_assert_eq!(result, expected);
         }
+
+        #[test]
+        fn prop_ct_f64_le_matches(a in 0.0f64..1.0, b in 0.0f64..1.0) {
+            let result = ct_f64_le(a, b);
+            let expected = if a <= b { 1 } else { 0 };
+            prop_assert_eq!(result, expected);
+        }
+
+        #[test]
+        fn prop_ct_f64_lt_matches(a in 0.0f64..1.0, b in 0.0f64..1.0) {
+            let result = ct_f64_lt(a, b);
+            let expected = if a < b { 1 } else { 0 };
+            prop_assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
+    fn test_ct_f64_le_basic() {
+        assert_eq!(ct_f64_le(0.0, 0.0), 1);
+        assert_eq!(ct_f64_le(0.0, 1.0), 1);
+        assert_eq!(ct_f64_le(1.0, 0.0), 0);
+        assert_eq!(ct_f64_le(0.5, 0.5), 1);
+        assert_eq!(ct_f64_le(0.3, 0.7), 1);
+        assert_eq!(ct_f64_le(0.7, 0.3), 0);
+        assert_eq!(ct_f64_le(0.0, 0.001), 1);
+        assert_eq!(ct_f64_le(0.999, 1.0), 1);
+    }
+
+    #[test]
+    fn test_ct_f64_lt_basic() {
+        assert_eq!(ct_f64_lt(0.0, 0.0), 0);
+        assert_eq!(ct_f64_lt(0.0, 1.0), 1);
+        assert_eq!(ct_f64_lt(1.0, 0.0), 0);
+        assert_eq!(ct_f64_lt(0.5, 0.5), 0);
+        assert_eq!(ct_f64_lt(0.3, 0.7), 1);
+        assert_eq!(ct_f64_lt(0.7, 0.3), 0);
     }
 }
