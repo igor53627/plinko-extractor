@@ -252,7 +252,7 @@ jobs:
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2024-12-07
+          toolchain: nightly-2025-04-05
           components: rustc-dev, llvm-tools-preview
 
       - name: Clone and build rocq-of-rust
@@ -278,6 +278,25 @@ jobs:
           git fetch origin "$FORK_BRANCH"
           # Cached builds may leave the working tree dirty; force checkout for a clean baseline.
           git checkout -f "origin/$FORK_BRANCH"
+
+          # Hotfix: bump the pinned rust toolchain so translation can build deps requiring rustc >= 1.88.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("rust-toolchain")
+          text = path.read_text()
+
+          old = 'channel = "nightly-2024-12-07"'
+          new = 'channel = "nightly-2025-04-05"'
+
+          if old in text:
+              path.write_text(text.replace(old, new))
+              print(f"Patched {path} ({old} -> {new})")
+          elif new in text:
+              print(f"No patch needed for {path} (already {new}).")
+          else:
+              raise SystemExit(f"Unexpected {path} contents; missing {old!r} and {new!r}.")
+          PY
 
           # Hotfix: keep OfTy/OfValue quantifying over Type (needed for pointers/refs in links/M.v).
           python3 - <<'PY'
@@ -312,7 +331,7 @@ jobs:
           
           if [ ! -f target/release/rocq-of-rust ]; then
             echo "Building rocq-of-rust..."
-            cargo +nightly-2024-12-07 build --release
+            cargo +nightly-2025-04-05 build --release
           else
             echo "Using cached rocq-of-rust binary"
           fi
