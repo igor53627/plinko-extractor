@@ -83,10 +83,11 @@ A 3.6GB subset of Ethereum state is available on Cloudflare R2 for testing:
 | `metadata.json` | 147 B | Block #23,889,314 extraction metadata |
 
 ```bash
-# Download (requires R2 credentials or public URL)
-aws s3 cp s3://plinko-regression-data/ ./regression-data/ \
-  --endpoint-url https://c6ffe0823b48a4b7689d9b9e9045e465.r2.cloudflarestorage.com \
-  --recursive
+# Download from public URL
+curl -O https://plinko-regression-data.53627.org/database.bin
+curl -O https://plinko-regression-data.53627.org/account-mapping.bin
+curl -O https://plinko-regression-data.53627.org/storage-mapping.bin
+curl -O https://plinko-regression-data.53627.org/metadata.json
 ```
 
 ## Hint Generation
