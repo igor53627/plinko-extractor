@@ -95,8 +95,8 @@
     "for_quick_summary": "Use Part 1 (metadata) only"
   },
   "regression_test_data": {
-    "location": "Cloudflare R2: s3://plinko-regression-data/",
-    "endpoint": "https://c6ffe0823b48a4b7689d9b9e9045e465.r2.cloudflarestorage.com",
+    "location": "https://plinko-regression-data.53627.org/",
+    "public": true,
     "source_block": 23889314,
     "accounts": 30000000,
     "storage_slots": 30000000,

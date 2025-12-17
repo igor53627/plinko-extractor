@@ -164,8 +164,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/rocq-of-rust
-          # v3: switched to fork with Rocq 9.x CLI support
-          key: rocq-of-rust-fork-${{ runner.os }}-v3
+          # v4: wrapper scripts for coq_makefile/coqc/coqdep -> rocq subcommands
+          key: rocq-of-rust-fork-${{ runner.os }}-v4
           restore-keys: |
             rocq-of-rust-fork-${{ runner.os }}-
 
@@ -190,12 +190,24 @@ jobs:
           # Debug: show available binaries
           echo "Available binaries in opam switch:"
           ls -la /home/runner/.opam/rocq-9/bin/ 2>/dev/null | grep -E "rocq|coq" | head -20 || echo "(bin dir not found)"
-          # Create compatibility symlinks (Rocq 9.x uses 'rocq' binary with subcommands)
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqc || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/rocqdep || true
-          ln -sf /home/runner/.opam/rocq-9/bin/rocq /home/runner/.opam/rocq-9/bin/coq_makefile || true
+          # Create wrapper scripts for Rocq 9.x CLI compatibility
+          # Rocq 9.x uses subcommands: rocq compile, rocq dep, rocq makefile
+          # Old tools used: coqc, coqdep, coq_makefile
+          cat > /home/runner/.opam/rocq-9/bin/coq_makefile << 'EOF'
+          #!/bin/bash
+          exec rocq makefile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coq_makefile
+          cat > /home/runner/.opam/rocq-9/bin/coqc << 'EOF'
+          #!/bin/bash
+          exec rocq compile "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coqc
+          cat > /home/runner/.opam/rocq-9/bin/coqdep << 'EOF'
+          #!/bin/bash
+          exec rocq dep "$@"
+          EOF
+          chmod +x /home/runner/.opam/rocq-9/bin/coqdep
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master
@@ -236,9 +248,13 @@ jobs:
       - name: Build RocqOfRust library
         run: |
           cd ~/rocq-of-rust/RocqOfRust
-          # Always rebuild if Makefile changed (fork has Rocq 9.x fix)
-          echo "Building RocqOfRust library..."
-          make -j2 || make
+          # Check if library is already built (M.vo is a core file)
+          if [ -f M.vo ]; then
+            echo "Using cached RocqOfRust library"
+          else
+            echo "Building RocqOfRust library..."
+            make -j2 || make
+          fi
 
       - name: Translate Rust to Rocq
         id: translate
