@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - No branches depend on `count` or `prf_output` (both treated as secret)
   - Uses log-gamma mode-based computation for numerical stability (supports n up to ~40k)
   - Uses `ct_f64_le`, `ct_select_f64` for constant-time IEEE 754 float operations
-  - Threshold: count <= 65536 (no fallback - approximation removed entirely)
+  - Threshold: `count <= CT_BINOMIAL_MAX_COUNT` (65536); no fallback - approximation removed entirely
   - `IprfTee` now uses `binomial_sample_tee` for TEE-safe execution
   - `IprfTee::new` asserts `n <= CT_BINOMIAL_MAX_COUNT` to enforce protocol invariant
   - `IprfTee::inverse_ct` uses constant-time min for MAX_PREIMAGES clamping

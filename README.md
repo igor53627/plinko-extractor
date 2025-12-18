@@ -156,18 +156,17 @@ We maintain consistency between three sources:
 | iPRF inverse | §4.2: `iF.F⁻¹(k,y) = {P⁻¹(z) : z ∈ S⁻¹(y)}` | `iPRF.inverse` | `Iprf::inverse` | proptest |
 | PMNS forward | Algorithm 1 | `PMNS.forward` | `Iprf::trace_ball` | proptest |
 | PMNS inverse | Algorithm 2 | `PMNS.inverse` | `Iprf::trace_ball_inverse` | proptest |
-| Binomial sampling | §4.3: "derandomized using r as randomness" | `binomial_sample` | `Iprf::binomial_sample` | **Kani** |
+| Binomial sampling | §4.3: "derandomized using r as randomness" | `binomial_sample`, `binomial_sample_tee` | [binomial.rs](state-syncer/src/binomial.rs), `Iprf`/`IprfTee` | **Kani** + tests |
 | Swap-or-Not PRP | Referenced: Morris-Rogaway 2013 | `SwapOrNot.prp_forward/inverse` | `SwapOrNot::forward/inverse` | proptest |
 | HintInit | Fig. 7: c keys, subset sizes c/2+1 and c/2 | `hint_init`, `process_db_entry` | [plinko_hints.rs](state-syncer/src/bin/plinko_hints.rs) | proptest |
 | Plinko params | §3: w=√N block size | [DbSpec.v](state-syncer/formal/specs/DbSpec.v) | [db.rs](state-syncer/src/db.rs) `derive_plinko_params` | proptest |
 
-**Key design decision**: The paper doesn't specify the exact binomial sampling algorithm. We use a simple integer-arithmetic sampler matching the Coq formalization:
+**Key design decision (binomial sampling)**: The paper specifies a derandomized Binomial(n, p; r) but not a concrete sampler. We implement:
 
-```text
-binomial_sample(count, num, denom, prf_output) = (count * num + (prf_output mod (denom + 1))) / denom
-```
+- **Standard path (`binomial_sample`)**: True Binomial(n, p) inverse-CDF sampler. Small n (<=1024) uses exact PMF recurrence O(n); large n uses binary search over CDF via regularized incomplete beta O(log n). Used by non-TEE `Iprf`.
+- **TEE path (`binomial_sample_tee`)**: Constant-time exact inverse-CDF sampler with fixed `CT_BINOMIAL_MAX_COUNT + 1` iterations, no early exit. Uses `ct_f64_le`/`ct_select_f64` from [constant_time.rs](state-syncer/src/constant_time.rs) for data-oblivious execution. Protocol invariant: `count <= CT_BINOMIAL_MAX_COUNT` (65536), enforced by `IprfTee::new`.
 
-This trades a slightly looser security bound for provable correctness and exact Rust-Coq parity.
+Both paths implement true Binomial(n, p) sampling consistent with the formal spec. The approximation-based fallback from earlier versions has been removed.
 
 ### Formal Verification
 
