@@ -196,12 +196,6 @@ fn sr_t_rounds_with_security(n: u64, n0: u64, lambda: u32) -> usize {
     sr_t_rounds_with_params(n, num_stages, lambda)
 }
 
-/// Precomputed round keys for one SR level
-struct SrLevelKeys {
-    n: u64,
-    round_keys: Vec<u64>,
-}
-
 /// Sometimes-Recurse PRP wrapper (Morris-Rogaway Fig. 1)
 ///
 /// Provides full-domain security: secure even when adversary queries all N elements.
@@ -209,18 +203,11 @@ struct SrLevelKeys {
 ///
 /// Round counts are computed per Morris-Rogaway Section 5 "Strategy 1" (equal error split)
 /// with 128-bit security by default.
-///
-/// Optimization: All round keys are precomputed at construction time to eliminate
-/// half of the AES operations during forward/inverse evaluation.
 pub struct SwapOrNotSr {
     cipher: Aes128,
     domain: u64,
     max_levels: usize,
-    #[allow(dead_code)]
     security_bits: u32,
-    /// Precomputed round keys for each SR level: level_keys[level] contains
-    /// all K_i values for that level's domain size
-    level_keys: Vec<SrLevelKeys>,
 }
 
 impl SwapOrNotSr {
@@ -237,52 +224,22 @@ impl SwapOrNotSr {
             (domain as f64).log2().ceil() as usize
         };
 
-        // Precompute all round keys for all levels
-        let level_keys = Self::precompute_all_keys(&cipher, domain, max_levels, security_bits);
-
         Self {
             cipher,
             domain,
             max_levels,
             security_bits,
-            level_keys,
         }
     }
 
-    /// Precompute round keys for all SR levels at construction time
-    fn precompute_all_keys(
-        cipher: &Aes128,
-        domain: u64,
-        max_levels: usize,
-        security_bits: u32,
-    ) -> Vec<SrLevelKeys> {
-        let mut keys = Vec::with_capacity(max_levels);
-        let mut n = domain;
-
-        for level in 0..max_levels {
-            if n <= 1 {
-                break;
-            }
-            let t = sr_t_rounds_with_security(n, domain, security_bits);
-            let round_keys: Vec<u64> = (0..t)
-                .map(|round| Self::compute_round_key(cipher, level, round, n))
-                .collect();
-
-            keys.push(SrLevelKeys { n, round_keys });
-            n /= 2;
-        }
-        keys
-    }
-
-    /// Compute a single round key (used during precomputation)
-    fn compute_round_key(cipher: &Aes128, level: usize, round: usize, n: u64) -> u64 {
+    fn derive_round_key(&self, level: usize, round: usize, n: u64) -> u64 {
         let mut input = [0u8; 16];
         let combined = ((level as u64) << 32) | (round as u64);
         input[0..8].copy_from_slice(&combined.to_be_bytes());
         input[8..16].copy_from_slice(&n.to_be_bytes());
 
         let mut block = GenericArray::from(input);
-        cipher.encrypt_block(&mut block);
+        self.cipher.encrypt_block(&mut block);
 
         u64::from_be_bytes(block[0..8].try_into().unwrap()) % n
     }
@@ -299,9 +256,8 @@ impl SwapOrNotSr {
         (block[0] & 1) == 1
     }
 
-    /// Apply one round using precomputed round key
-    fn round_with_key(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
-        let k_i = self.level_keys[level].round_keys[round_num];
+    fn round(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
+        let k_i = self.derive_round_key(level, round_num, n);
         let partner = (k_i + n - (x % n)) % n;
         let canonical = x.max(partner);
 
@@ -313,19 +269,19 @@ impl SwapOrNotSr {
     }
 
     fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = x;
-        for r in 0..num_rounds {
-            val = self.round_with_key(level, r, n, val);
+        for r in 0..t {
+            val = self.round(level, r, n, val);
         }
         val
     }
 
     fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = y;
-        for r in (0..num_rounds).rev() {
-            val = self.round_with_key(level, r, n, val);
+        for r in (0..t).rev() {
+            val = self.round(level, r, n, val);
         }
         val
     }
@@ -333,14 +289,18 @@ impl SwapOrNotSr {
     pub fn forward(&self, x: u64) -> u64 {
         assert!(x < self.domain, "x must be < domain");
         let mut val = x;
+        let mut n = self.domain;
 
-        for level in 0..self.level_keys.len() {
-            let n = self.level_keys[level].n;
+        for level in 0..self.max_levels {
+            if n <= 1 {
+                break;
+            }
             val = self.apply_rounds_forward(level, n, val);
             let half = n / 2;
             if val >= half {
                 return val;
             }
+            n = half;
         }
         val
     }
@@ -348,14 +308,13 @@ impl SwapOrNotSr {
     pub fn inverse(&self, y: u64) -> u64 {
         assert!(y < self.domain, "y must be < domain");
 
-        // Find the deepest level we need to reach
-        let mut depth = 0;
+        let mut sizes = Vec::with_capacity(self.max_levels);
         let mut n = self.domain;
-        for level in 0..self.level_keys.len() {
+        for _ in 0..self.max_levels {
             if n <= 1 {
                 break;
             }
-            depth = level + 1;
+            sizes.push(n);
             let half = n / 2;
             if y >= half {
                 break;
@@ -364,8 +323,7 @@ impl SwapOrNotSr {
         }
 
         let mut val = y;
-        for level in (0..depth).rev() {
-            let n = self.level_keys[level].n;
+        for (level, &n) in sizes.iter().enumerate().rev() {
             val = self.apply_rounds_inverse(level, n, val);
         }
         val
@@ -379,17 +337,11 @@ impl SwapOrNotSr {
 ///
 /// Round counts are computed per Morris-Rogaway Section 5 "Strategy 1" (equal error split)
 /// with 128-bit security by default.
-///
-/// Optimization: All round keys are precomputed at construction time to eliminate
-/// half of the AES operations during forward/inverse evaluation.
 pub struct SwapOrNotSrTee {
     cipher: Aes128,
     domain: u64,
     max_levels: usize,
-    #[allow(dead_code)]
     security_bits: u32,
-    /// Precomputed round keys for each SR level
-    level_keys: Vec<SrLevelKeys>,
 }
 
 impl SwapOrNotSrTee {
@@ -406,17 +358,24 @@ impl SwapOrNotSrTee {
             (domain as f64).log2().ceil() as usize
         };
 
-        // Precompute all round keys for all levels (reuse SwapOrNotSr helper)
-        let level_keys =
-            SwapOrNotSr::precompute_all_keys(&cipher, domain, max_levels, security_bits);
-
         Self {
             cipher,
             domain,
             max_levels,
             security_bits,
-            level_keys,
         }
+    }
+
+    fn derive_round_key(&self, level: usize, round: usize, n: u64) -> u64 {
+        let mut input = [0u8; 16];
+        let combined = ((level as u64) << 32) | (round as u64);
+        input[0..8].copy_from_slice(&combined.to_be_bytes());
+        input[8..16].copy_from_slice(&n.to_be_bytes());
+
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+
+        u64::from_be_bytes(block[0..8].try_into().unwrap()) % n
     }
 
     fn prf_bit_ct(&self, level: usize, round: usize, canonical: u64) -> u64 {
@@ -431,11 +390,10 @@ impl SwapOrNotSrTee {
         (block[0] & 1) as u64
     }
 
-    /// Apply one round using precomputed round key (constant-time)
-    fn round_ct_with_key(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
+    fn round_ct(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
         use crate::constant_time::{ct_lt_u64, ct_select_u64};
 
-        let k_i = self.level_keys[level].round_keys[round_num];
+        let k_i = self.derive_round_key(level, round_num, n);
         let partner = (k_i + n - (x % n)) % n;
 
         let x_lt_partner = ct_lt_u64(x, partner);
@@ -446,19 +404,19 @@ impl SwapOrNotSrTee {
     }
 
     fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = x;
-        for r in 0..num_rounds {
-            val = self.round_ct_with_key(level, r, n, val);
+        for r in 0..t {
+            val = self.round_ct(level, r, n, val);
         }
         val
     }
 
     fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = y;
-        for r in (0..num_rounds).rev() {
-            val = self.round_ct_with_key(level, r, n, val);
+        for r in (0..t).rev() {
+            val = self.round_ct(level, r, n, val);
         }
         val
     }
@@ -468,12 +426,12 @@ impl SwapOrNotSrTee {
 
         debug_assert!(x < self.domain, "x must be < domain");
         let mut val = x % self.domain;
+        let mut n = self.domain;
         let mut result = 0u64;
         let mut done = 0u64;
 
-        for level in 0..self.level_keys.len() {
-            let n = self.level_keys[level].n;
-            let should_skip = done;
+        for level in 0..self.max_levels {
+            let should_skip = ct_ge_u64(1, n) | done;
 
             val = ct_select_u64(should_skip, val, self.apply_rounds_forward(level, n, val));
 
@@ -481,38 +439,40 @@ impl SwapOrNotSrTee {
             let exited = ct_ge_u64(val, half);
             result = ct_select_u64(exited & (1 - done), val, result);
             done |= exited;
+
+            n = ct_select_u64(should_skip, n, half);
         }
 
         ct_select_u64(done, result, val)
     }
 
     pub fn inverse(&self, y: u64) -> u64 {
-        use crate::constant_time::{ct_eq_u64, ct_ge_u64, ct_lt_u64, ct_select_u64};
+        use crate::constant_time::{ct_eq_u64, ct_ge_u64, ct_gt_u64, ct_lt_u64, ct_select_u64};
 
         debug_assert!(y < self.domain, "y must be < domain");
         let y = y % self.domain;
 
         let mut sizes = [0u64; 64];
+        let mut n = self.domain;
         let mut stopped: u64 = 0;
 
-        for level in 0..self.level_keys.len() {
-            let n = self.level_keys[level].n;
-            let should_record = ct_eq_u64(stopped, 0);
-            sizes[level] = ct_select_u64(should_record, n, 0);
+        for i in 0..self.max_levels {
+            let should_record = ct_gt_u64(n, 1) & ct_eq_u64(stopped, 0);
+            sizes[i] = ct_select_u64(should_record, n, 0);
 
             let half = n / 2;
             let y_in_right = ct_ge_u64(y, half);
             let stopping_now = should_record & y_in_right;
             stopped = ct_select_u64(stopping_now, 1, stopped);
+
+            n = ct_select_u64(should_record & ct_eq_u64(stopped, 0), half, n);
         }
 
         let mut val = y;
-        for level in (0..self.level_keys.len()).rev() {
+        for level in (0..self.max_levels).rev() {
             let n_lvl = sizes[level];
             let skip = ct_lt_u64(n_lvl, 2);
-            // Use level's actual n to avoid division by zero; skip flag handles correctness
-            let safe_n = self.level_keys[level].n;
-            val = ct_select_u64(skip, val, self.apply_rounds_inverse(level, safe_n, val));
+            val = ct_select_u64(skip, val, self.apply_rounds_inverse(level, n_lvl, val));
         }
         val
     }
@@ -813,14 +773,6 @@ impl Iprf {
     /// tree depth as ceil(log2(m)), and derives a separate 128-bit key (SHA-256(key || "prp"))
     /// to initialize the internal Sometimes-Recurse PRP over the input domain `n`.
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
-        Self::with_security(key, n, m, DEFAULT_SECURITY_BITS)
-    }
-
-    /// Creates a new iPRF with explicit SR PRP security parameter.
-    ///
-    /// The `security_bits` parameter controls the round count in the Sometimes-Recurse PRP.
-    /// Lower values (e.g., 64) significantly speed up computation but provide weaker PRP security.
-    pub fn with_security(key: PrfKey128, n: u64, m: u64, security_bits: u32) -> Self {
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
 
@@ -832,7 +784,7 @@ impl Iprf {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNotSr::with_security(prp_key, n, security_bits);
+        let prp = SwapOrNotSr::new(prp_key, n);
 
         Self {
             key,
