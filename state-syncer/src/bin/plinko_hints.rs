@@ -392,8 +392,20 @@ fn main() -> eyre::Result<()> {
         .map(|key| Iprf::new(*key, total_hints as u64, w as u64))
         .collect();
 
-    // Step 4: Stream database and update parities
-    println!("[4/4] Streaming database ({} entries)...", n_effective);
+    // Precompute all iPRF inverse mappings: block -> offset -> Vec<hint_indices>
+    // This moves the expensive SR PRP computation out of the streaming loop
+    println!("[4/5] Precomputing iPRF inverse mappings ({} blocks x {} offsets)...", c, w);
+    let precompute_start = Instant::now();
+    let block_inverse_maps: Vec<Vec<Vec<u64>>> = block_iprfs
+        .iter()
+        .map(|iprf| {
+            (0..w).map(|offset| iprf.inverse(offset as u64)).collect()
+        })
+        .collect();
+    println!("  Precompute time: {:.2?}", precompute_start.elapsed());
+
+    // Step 5: Stream database and update parities (now just lookups + XOR)
+    println!("[5/5] Streaming database ({} entries)...", n_effective);
     let pb = ProgressBar::new(n_effective as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -416,10 +428,10 @@ fn main() -> eyre::Result<()> {
             [0u8; 32]
         };
 
-        // Find all hints j where iPRF.forward(j) == offset
-        let hint_indices = block_iprfs[block].inverse(offset as u64);
+        // Look up precomputed hint indices for this (block, offset)
+        let hint_indices = &block_inverse_maps[block][offset];
 
-        for j in hint_indices {
+        for &j in hint_indices {
             let j = j as usize;
             if j < num_regular {
                 // Regular hint: XOR if block in P
