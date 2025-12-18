@@ -813,6 +813,14 @@ impl Iprf {
     /// tree depth as ceil(log2(m)), and derives a separate 128-bit key (SHA-256(key || "prp"))
     /// to initialize the internal Sometimes-Recurse PRP over the input domain `n`.
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
+        Self::with_security(key, n, m, DEFAULT_SECURITY_BITS)
+    }
+
+    /// Creates a new iPRF with explicit SR PRP security parameter.
+    ///
+    /// The `security_bits` parameter controls the round count in the Sometimes-Recurse PRP.
+    /// Lower values (e.g., 64) significantly speed up computation but provide weaker PRP security.
+    pub fn with_security(key: PrfKey128, n: u64, m: u64, security_bits: u32) -> Self {
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
 
@@ -824,7 +832,7 @@ impl Iprf {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNotSr::new(prp_key, n);
+        let prp = SwapOrNotSr::with_security(prp_key, n, security_bits);
 
         Self {
             key,

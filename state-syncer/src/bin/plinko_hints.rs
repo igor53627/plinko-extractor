@@ -57,6 +57,12 @@ struct Args {
     /// Print the master seed (for reproducibility). Use with caution in production.
     #[arg(long)]
     print_seed: bool,
+
+    /// SR PRP security parameter in bits (default: 128).
+    /// Lower values (e.g., 64) significantly speed up hint generation but reduce PRP security.
+    /// The overall Plinko security also depends on the hint structure (lambda), not just PRP security.
+    #[arg(long, default_value = "128")]
+    sr_security: u32,
 }
 
 /// Regular hint: P_j subset of c/2+1 blocks, single parity
@@ -388,9 +394,10 @@ fn main() -> eyre::Result<()> {
     }
 
     // Pre-create iPRF instances for each block (avoids recreating per entry)
+    println!("  SR PRP security: {} bits", args.sr_security);
     let block_iprfs: Vec<Iprf> = block_keys
         .iter()
-        .map(|key| Iprf::new(*key, total_hints as u64, w as u64))
+        .map(|key| Iprf::with_security(*key, total_hints as u64, w as u64, args.sr_security))
         .collect();
 
     // Precompute all iPRF inverse mappings: block -> offset -> Vec<hint_indices>
