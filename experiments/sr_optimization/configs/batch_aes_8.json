@@ -1,0 +1,9 @@
+{
+  "name": "batch_aes_8",
+  "transforms": ["T1_PRECOMPUTE_KEYS", "T2_BATCH_AES"],
+  "params": {
+    "security_bits": 128,
+    "batch_size": 8
+  },
+  "description": "Batch AES with 8-block parallel encryption via AES-NI"
+}

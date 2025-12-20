@@ -3,6 +3,14 @@ name = "state-syncer"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+batch_aes = []
+lazy_sr = []
+simd_prf = []
+round_unroll = []
+cache_canonical = []
+
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
 eyre = "0.6"
@@ -26,3 +34,7 @@ proptest = "1.4"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[[bin]]
+name = "bench_sr"
+path = "src/bin/bench_sr.rs"

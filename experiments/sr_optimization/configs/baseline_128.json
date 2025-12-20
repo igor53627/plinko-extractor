@@ -1,0 +1,9 @@
+{
+  "name": "baseline_128",
+  "transforms": ["T1_PRECOMPUTE_KEYS"],
+  "params": {
+    "security_bits": 128,
+    "batch_size": 1
+  },
+  "description": "Full 128-bit security baseline with precomputed round keys"
+}
