@@ -18,3 +18,4 @@ plinko/formal/artifacts/
 # Regression data binaries (keep local, not in repo)
 regression-data/*.bin
 regression-data/*.part*
+.agents/reasoner-skills/

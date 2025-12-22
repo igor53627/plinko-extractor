@@ -1457,69 +1457,14 @@
             }
         }
 
-        // =====================================================
-        // LEGACY PMNS FUNCTIONS (for iPRF visualization)
-        // =====================================================
-        
-        // Deterministic hash for demo
-        function hash(seed, x, y = 0) {
-            let h = seed * 2654435761 + x * 1103515245 + y * 12345;
-            return Math.abs(h) % 1000000;
-        }
-
-        // Calculate path through pegs based on binary tree decisions
-        function calculateBallPath(ballIndex, n, m, seed = 42) {
-            let low = 0, high = m - 1;
-            let ballCount = n;
-            let currentBallIndex = ballIndex;
-            let decisions = [];
-            let treeSteps = [];
-
-            while (low < high) {
-                const mid = Math.floor((low + high) / 2);
-                const leftBins = mid - low + 1;
-                const totalBins = high - low + 1;
-                const p = leftBins / totalBins;
-                
-                const prfOut = hash(seed, low, high);
-                const leftCount = Math.floor(ballCount * p + (prfOut % (totalBins + 1)) / totalBins);
-                
-                const goLeft = currentBallIndex < leftCount;
-                decisions.push(goLeft);
-                
-                treeSteps.push({
-                    range: `[${low}, ${high}]`,
-                    mid: mid,
-                    p: p.toFixed(2),
-                    leftCount: leftCount,
-                    ballIndex: currentBallIndex,
-                    decision: goLeft ? 'LEFT' : 'RIGHT'
-                });
-                
-                if (goLeft) {
-                    high = mid;
-                    ballCount = leftCount;
-                } else {
-                    currentBallIndex -= leftCount;
-                    low = mid + 1;
-                    ballCount -= leftCount;
-                }
-            }
-            
-            return { bin: low, decisions, treeSteps };
-        }
-
-        // Alias for iPRF visualization compatibility
-        function traceBall(x, n, m, seed = 42) {
-            return calculateBallPath(x, n, m, seed);
-        }
-
         // SwapOrNot State
         let domainSize = 8;
         let currentX = 3;
         let currentRound = 0;
         let totalRounds = 6;
         let swapHistory = [];
+        let prpRunning = false;
+        let prpInterval = null;
 
         // HintInit State
         let dbSize = 16;
@@ -1536,34 +1481,9 @@
             return Math.abs(h) % 1000000;
         }
 
-        // Calculate peg positions for the Plinko board
-        function getPegPositions() {
-            const pegs = [];
-            const numRows = Math.ceil(Math.log2(binCount)) + 2;
-            const startY = 50;
-            const endY = CANVAS_HEIGHT - 30;
-            const rowSpacing = (endY - startY) / (numRows + 1);
-            
-            for (let row = 0; row < numRows; row++) {
-                const pegsInRow = row + 1;
-                const y = startY + row * rowSpacing;
-                const totalWidth = CANVAS_WIDTH - 80;
-                const pegSpacing = totalWidth / binCount;
-                const startX = (CANVAS_WIDTH - (pegsInRow - 1) * pegSpacing) / 2;
-                
-                for (let col = 0; col < pegsInRow; col++) {
-                    pegs.push({
-                        x: startX + col * pegSpacing,
-                        y: y,
-                        row: row,
-                        col: col
-                    });
-                }
-            }
-            return pegs;
-        }
-
         // Calculate path through pegs based on binary tree decisions
+        // NOTE: This is a toy PMNS with deterministic approximate splits,
+        // not a faithful statistically correct Binomial sampler as in the paper.
         function calculateBallPath(ballIndex, n, m, seed = 42) {
             let low = 0, high = m - 1;
             let ballCount = n;
@@ -1681,9 +1601,13 @@
         }
 
         function runFullPRP() {
-            const interval = setInterval(() => {
+            if (prpRunning) return;
+            prpRunning = true;
+            prpInterval = setInterval(() => {
                 if (currentRound >= totalRounds) {
-                    clearInterval(interval);
+                    clearInterval(prpInterval);
+                    prpRunning = false;
+                    prpInterval = null;
                     return;
                 }
                 stepSwapOrNot();
@@ -1691,6 +1615,11 @@
         }
 
         function resetSwapOrNot() {
+            if (prpInterval) {
+                clearInterval(prpInterval);
+                prpInterval = null;
+            }
+            prpRunning = false;
             currentX = parseInt(document.getElementById('input-x-slider').value);
             initSwapOrNot();
         }
@@ -1863,13 +1792,16 @@
             renderHintInit();
         }
 
+        let hintInitInterval = null;
+        
         function runHintInit() {
             if (isRunning) return;
             isRunning = true;
             
-            const interval = setInterval(() => {
+            hintInitInterval = setInterval(() => {
                 if (currentDbIndex >= dbSize) {
-                    clearInterval(interval);
+                    clearInterval(hintInitInterval);
+                    hintInitInterval = null;
                     isRunning = false;
                     return;
                 }
@@ -1878,6 +1810,10 @@
         }
 
         function resetHintInit() {
+            if (hintInitInterval) {
+                clearInterval(hintInitInterval);
+                hintInitInterval = null;
+            }
             isRunning = false;
             initHintInit();
         }
