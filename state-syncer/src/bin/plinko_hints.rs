@@ -13,7 +13,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use memmap2::MmapOptions;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use state_syncer::iprf::{Iprf, PrfKey128};
 use std::fs::File;
@@ -57,12 +56,6 @@ struct Args {
     /// Print the master seed (for reproducibility). Use with caution in production.
     #[arg(long)]
     print_seed: bool,
-
-    /// SR PRP security parameter in bits (default: 128).
-    /// Lower values (e.g., 64) significantly speed up hint generation but reduce PRP security.
-    /// The overall Plinko security also depends on the hint structure (lambda), not just PRP security.
-    #[arg(long, default_value = "128")]
-    sr_security: u32,
 }
 
 /// Regular hint: P_j subset of c/2+1 blocks, single parity
@@ -394,45 +387,13 @@ fn main() -> eyre::Result<()> {
     }
 
     // Pre-create iPRF instances for each block (avoids recreating per entry)
-    println!("  SR PRP security: {} bits", args.sr_security);
     let block_iprfs: Vec<Iprf> = block_keys
         .iter()
-        .map(|key| Iprf::with_security(*key, total_hints as u64, w as u64, args.sr_security))
+        .map(|key| Iprf::new(*key, total_hints as u64, w as u64))
         .collect();
 
-    // Precompute iPRF mappings using batch forward evaluation
-    // For each block, we evaluate forward(j) for all j in [0, total_hints) and build
-    // the inverse mapping offset -> Vec<hint_indices>
-    // Using forward_batch for ~3-4x speedup per block, plus rayon parallelism across blocks
-    println!(
-        "[4/5] Precomputing iPRF mappings ({} blocks x {} hints via batch forward)...",
-        c, total_hints
-    );
-    let precompute_start = Instant::now();
-    
-    // Build input array once (shared across all blocks)
-    let hint_indices: Vec<u64> = (0..total_hints as u64).collect();
-    
-    let block_inverse_maps: Vec<Vec<Vec<u64>>> = block_iprfs
-        .par_iter()
-        .map(|iprf| {
-            // Initialize empty vecs for each offset
-            let mut offset_to_hints: Vec<Vec<u64>> = vec![Vec::new(); w];
-            
-            // Batch forward evaluation - ~3-4x faster than sequential
-            let offsets = iprf.forward_batch(&hint_indices);
-            
-            // Build inverse mapping
-            for (j, &offset) in offsets.iter().enumerate() {
-                offset_to_hints[offset as usize].push(j as u64);
-            }
-            offset_to_hints
-        })
-        .collect();
-    println!("  Precompute time: {:.2?}", precompute_start.elapsed());
-
-    // Step 5: Stream database and update parities (now just lookups + XOR)
-    println!("[5/5] Streaming database ({} entries)...", n_effective);
+    // Step 4: Stream database and update parities
+    println!("[4/4] Streaming database ({} entries)...", n_effective);
     let pb = ProgressBar::new(n_effective as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -455,10 +416,10 @@ fn main() -> eyre::Result<()> {
             [0u8; 32]
         };
 
-        // Look up precomputed hint indices for this (block, offset)
-        let hint_indices = &block_inverse_maps[block][offset];
+        // Find all hints j where iPRF.forward(j) == offset
+        let hint_indices = block_iprfs[block].inverse(offset as u64);
 
-        for &j in hint_indices {
+        for j in hint_indices {
             let j = j as usize;
             if j < num_regular {
                 // Regular hint: XOR if block in P

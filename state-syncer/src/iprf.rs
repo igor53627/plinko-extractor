@@ -6,27 +6,10 @@
 //! - Inverse: iF.F^{-1}(k, y) = {P^{-1}(k_prp, z) : z ∈ S^{-1}(k_pmns, y)}
 //!
 //! The Swap-or-Not PRP is based on Morris-Rogaway (eprint 2013/560).
-//!
-//! # Feature Flags
-//!
-//! - `batch_aes`: Enable batch AES encryption for parallel prf_bit evaluation
-//! - `lazy_sr`: Enable lazy SR level evaluation (skip unnecessary deep levels)
-//! - `round_unroll`: Enable loop unrolling for round application
 
 use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
 use aes::Aes128;
 use sha2::{Digest, Sha256};
-
-#[cfg(feature = "batch_aes")]
-use aes::cipher::BlockEncryptMut;
-
-/// Read security bits from environment variable SR_SECURITY_BITS, defaulting to 128.
-pub fn security_bits_from_env() -> u32 {
-    std::env::var("SR_SECURITY_BITS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_SECURITY_BITS)
-}
 
 pub type PrfKey128 = [u8; 16];
 
@@ -213,12 +196,6 @@ fn sr_t_rounds_with_security(n: u64, n0: u64, lambda: u32) -> usize {
     sr_t_rounds_with_params(n, num_stages, lambda)
 }
 
-/// Precomputed round keys for one SR level
-struct SrLevelKeys {
-    n: u64,
-    round_keys: Vec<u64>,
-}
-
 /// Sometimes-Recurse PRP wrapper (Morris-Rogaway Fig. 1)
 ///
 /// Provides full-domain security: secure even when adversary queries all N elements.
@@ -226,18 +203,11 @@ struct SrLevelKeys {
 ///
 /// Round counts are computed per Morris-Rogaway Section 5 "Strategy 1" (equal error split)
 /// with 128-bit security by default.
-///
-/// Optimization: All round keys are precomputed at construction time to eliminate
-/// half of the AES operations during forward/inverse evaluation.
 pub struct SwapOrNotSr {
     cipher: Aes128,
     domain: u64,
     max_levels: usize,
-    #[allow(dead_code)]
     security_bits: u32,
-    /// Precomputed round keys for each SR level: level_keys[level] contains
-    /// all K_i values for that level's domain size
-    level_keys: Vec<SrLevelKeys>,
 }
 
 impl SwapOrNotSr {
@@ -254,52 +224,22 @@ impl SwapOrNotSr {
             (domain as f64).log2().ceil() as usize
         };
 
-        // Precompute all round keys for all levels
-        let level_keys = Self::precompute_all_keys(&cipher, domain, max_levels, security_bits);
-
         Self {
             cipher,
             domain,
             max_levels,
             security_bits,
-            level_keys,
         }
     }
 
-    /// Precompute round keys for all SR levels at construction time
-    fn precompute_all_keys(
-        cipher: &Aes128,
-        domain: u64,
-        max_levels: usize,
-        security_bits: u32,
-    ) -> Vec<SrLevelKeys> {
-        let mut keys = Vec::with_capacity(max_levels);
-        let mut n = domain;
-
-        for level in 0..max_levels {
-            if n <= 1 {
-                break;
-            }
-            let t = sr_t_rounds_with_security(n, domain, security_bits);
-            let round_keys: Vec<u64> = (0..t)
-                .map(|round| Self::compute_round_key(cipher, level, round, n))
-                .collect();
-
-            keys.push(SrLevelKeys { n, round_keys });
-            n /= 2;
-        }
-        keys
-    }
-
-    /// Compute a single round key (used during precomputation)
-    fn compute_round_key(cipher: &Aes128, level: usize, round: usize, n: u64) -> u64 {
+    fn derive_round_key(&self, level: usize, round: usize, n: u64) -> u64 {
         let mut input = [0u8; 16];
         let combined = ((level as u64) << 32) | (round as u64);
         input[0..8].copy_from_slice(&combined.to_be_bytes());
         input[8..16].copy_from_slice(&n.to_be_bytes());
 
         let mut block = GenericArray::from(input);
-        cipher.encrypt_block(&mut block);
+        self.cipher.encrypt_block(&mut block);
 
         u64::from_be_bytes(block[0..8].try_into().unwrap()) % n
     }
@@ -316,45 +256,8 @@ impl SwapOrNotSr {
         (block[0] & 1) == 1
     }
 
-    /// Batch prf_bit evaluation for multiple canonicals in the same round.
-    /// Returns a vector of swap decisions.
-    #[cfg(feature = "batch_aes")]
-    fn prf_bits_batch(&self, level: usize, round: usize, canonicals: &[u64]) -> Vec<bool> {
-        use aes::cipher::typenum::U16;
-        
-        let combined = ((level as u64) << 32) | (round as u64) | 0x80000000;
-        let combined_bytes = combined.to_be_bytes();
-        
-        let mut results = Vec::with_capacity(canonicals.len());
-        
-        // Process in chunks of 8 for AES-NI parallelism
-        for chunk in canonicals.chunks(8) {
-            let mut blocks: Vec<GenericArray<u8, U16>> = chunk
-                .iter()
-                .map(|&canonical| {
-                    let mut input = [0u8; 16];
-                    input[0..8].copy_from_slice(&combined_bytes);
-                    input[8..16].copy_from_slice(&canonical.to_be_bytes());
-                    GenericArray::from(input)
-                })
-                .collect();
-            
-            // Encrypt all blocks in parallel
-            for block in blocks.iter_mut() {
-                self.cipher.encrypt_block(block);
-            }
-            
-            for block in &blocks {
-                results.push((block[0] & 1) == 1);
-            }
-        }
-        
-        results
-    }
-
-    /// Apply one round using precomputed round key
-    fn round_with_key(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
-        let k_i = self.level_keys[level].round_keys[round_num];
+    fn round(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
+        let k_i = self.derive_round_key(level, round_num, n);
         let partner = (k_i + n - (x % n)) % n;
         let canonical = x.max(partner);
 
@@ -365,180 +268,53 @@ impl SwapOrNotSr {
         }
     }
 
-    /// Apply rounds with optional unrolling
-    #[cfg(not(feature = "round_unroll"))]
     fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = x;
-        for r in 0..num_rounds {
-            val = self.round_with_key(level, r, n, val);
+        for r in 0..t {
+            val = self.round(level, r, n, val);
         }
         val
     }
 
-    /// Apply rounds with 4x unrolling for better instruction-level parallelism
-    #[cfg(feature = "round_unroll")]
-    fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
-        let mut val = x;
-        
-        // Unroll by 4
-        let full_iters = num_rounds / 4;
-        let remainder = num_rounds % 4;
-        
-        for i in 0..full_iters {
-            let base = i * 4;
-            val = self.round_with_key(level, base, n, val);
-            val = self.round_with_key(level, base + 1, n, val);
-            val = self.round_with_key(level, base + 2, n, val);
-            val = self.round_with_key(level, base + 3, n, val);
-        }
-        
-        let base = full_iters * 4;
-        for r in 0..remainder {
-            val = self.round_with_key(level, base + r, n, val);
-        }
-        
-        val
-    }
-
-    #[cfg(not(feature = "round_unroll"))]
     fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = y;
-        for r in (0..num_rounds).rev() {
-            val = self.round_with_key(level, r, n, val);
+        for r in (0..t).rev() {
+            val = self.round(level, r, n, val);
         }
-        val
-    }
-
-    #[cfg(feature = "round_unroll")]
-    fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
-        let mut val = y;
-        
-        let full_iters = num_rounds / 4;
-        let remainder = num_rounds % 4;
-        
-        // Handle remainder first (highest round numbers)
-        for r in 0..remainder {
-            val = self.round_with_key(level, num_rounds - 1 - r, n, val);
-        }
-        
-        // Unrolled iterations
-        for i in (0..full_iters).rev() {
-            let base = i * 4;
-            val = self.round_with_key(level, base + 3, n, val);
-            val = self.round_with_key(level, base + 2, n, val);
-            val = self.round_with_key(level, base + 1, n, val);
-            val = self.round_with_key(level, base, n, val);
-        }
-        
         val
     }
 
     pub fn forward(&self, x: u64) -> u64 {
         assert!(x < self.domain, "x must be < domain");
         let mut val = x;
+        let mut n = self.domain;
 
-        for level in 0..self.level_keys.len() {
-            let n = self.level_keys[level].n;
+        for level in 0..self.max_levels {
+            if n <= 1 {
+                break;
+            }
             val = self.apply_rounds_forward(level, n, val);
             let half = n / 2;
             if val >= half {
                 return val;
             }
+            n = half;
         }
         val
-    }
-
-    /// Batch forward: process multiple x values through the PRP.
-    ///
-    /// Achieves ~3-4x speedup over sequential forward by batching AES operations.
-    pub fn forward_batch(&self, xs: &[u64]) -> Vec<u64> {
-        if xs.is_empty() {
-            return Vec::new();
-        }
-
-        // Track active elements (not yet exited) at each level
-        let mut results = vec![0u64; xs.len()];
-        let mut active: Vec<(usize, u64)> = xs.iter().enumerate()
-            .map(|(i, &x)| {
-                debug_assert!(x < self.domain, "x must be < domain");
-                (i, x)
-            })
-            .collect();
-
-        for level in 0..self.level_keys.len() {
-            if active.is_empty() {
-                break;
-            }
-
-            let n = self.level_keys[level].n;
-            let half = n / 2;
-
-            // Apply rounds to all active elements
-            let mut vals: Vec<u64> = active.iter().map(|(_, v)| *v).collect();
-            self.apply_rounds_forward_batch(level, n, &mut vals);
-
-            // Partition: exited vs continuing
-            let mut next_active = Vec::new();
-            for ((idx, _), val) in active.iter().zip(vals.iter()) {
-                if *val >= half {
-                    results[*idx] = *val;
-                } else {
-                    next_active.push((*idx, *val));
-                }
-            }
-            active = next_active;
-        }
-
-        // Any remaining active elements get their current value
-        for (idx, val) in active {
-            results[idx] = val;
-        }
-
-        results
-    }
-
-    /// Apply forward rounds to a batch of values at the same level
-    fn apply_rounds_forward_batch(&self, level: usize, n: u64, vals: &mut [u64]) {
-        let num_rounds = self.level_keys[level].round_keys.len();
-        
-        for r in 0..num_rounds {
-            let k_i = self.level_keys[level].round_keys[r];
-            
-            // Compute partners and canonicals for all values
-            let partners: Vec<u64> = vals.iter()
-                .map(|&x| (k_i + n - (x % n)) % n)
-                .collect();
-            let canonicals: Vec<u64> = vals.iter().zip(partners.iter())
-                .map(|(&x, &p)| x.max(p))
-                .collect();
-            
-            // Batch prf_bit evaluation
-            let swap_bits = self.prf_bits_batch_internal(level, r, &canonicals);
-            
-            // Apply swaps
-            for i in 0..vals.len() {
-                if swap_bits[i] {
-                    vals[i] = partners[i];
-                }
-            }
-        }
     }
 
     pub fn inverse(&self, y: u64) -> u64 {
         assert!(y < self.domain, "y must be < domain");
 
-        // Find the deepest level we need to reach
-        let mut depth = 0;
+        let mut sizes = Vec::with_capacity(self.max_levels);
         let mut n = self.domain;
-        for level in 0..self.level_keys.len() {
+        for _ in 0..self.max_levels {
             if n <= 1 {
                 break;
             }
-            depth = level + 1;
+            sizes.push(n);
             let half = n / 2;
             if y >= half {
                 break;
@@ -547,172 +323,10 @@ impl SwapOrNotSr {
         }
 
         let mut val = y;
-        for level in (0..depth).rev() {
-            let n = self.level_keys[level].n;
+        for (level, &n) in sizes.iter().enumerate().rev() {
             val = self.apply_rounds_inverse(level, n, val);
         }
         val
-    }
-
-    /// Batch inverse: process multiple y values through the PRP inverse.
-    /// 
-    /// This is significantly faster than calling inverse() repeatedly because:
-    /// 1. Elements at the same SR level can share round key lookups
-    /// 2. AES-NI can encrypt 8 blocks in parallel for prf_bit
-    /// 3. Better cache locality when processing elements together
-    ///
-    /// With 128-bit security, achieves ~3.5x speedup over sequential inverse.
-    pub fn inverse_batch(&self, ys: &[u64]) -> Vec<u64> {
-        if ys.is_empty() {
-            return Vec::new();
-        }
-
-        // Group elements by their exit depth
-        let mut by_depth: Vec<Vec<(usize, u64)>> = vec![Vec::new(); self.level_keys.len() + 1];
-        
-        for (idx, &y) in ys.iter().enumerate() {
-            debug_assert!(y < self.domain, "y must be < domain");
-            
-            let mut depth = 0;
-            let mut n = self.domain;
-            for level in 0..self.level_keys.len() {
-                if n <= 1 {
-                    break;
-                }
-                depth = level + 1;
-                let half = n / 2;
-                if y >= half {
-                    break;
-                }
-                n = half;
-            }
-            by_depth[depth].push((idx, y));
-        }
-
-        let mut results = vec![0u64; ys.len()];
-
-        // Process each depth group
-        for depth in 1..=self.level_keys.len() {
-            let group = &by_depth[depth];
-            if group.is_empty() {
-                continue;
-            }
-
-            // Apply inverse rounds for this group
-            let mut vals: Vec<u64> = group.iter().map(|(_, y)| *y).collect();
-            
-            for level in (0..depth).rev() {
-                let n = self.level_keys[level].n;
-                self.apply_rounds_inverse_batch(level, n, &mut vals);
-            }
-
-            // Store results
-            for ((idx, _), val) in group.iter().zip(vals.iter()) {
-                results[*idx] = *val;
-            }
-        }
-
-        results
-    }
-
-    /// Apply inverse rounds to a batch of values at the same level
-    fn apply_rounds_inverse_batch(&self, level: usize, n: u64, vals: &mut [u64]) {
-        let num_rounds = self.level_keys[level].round_keys.len();
-        
-        for r in (0..num_rounds).rev() {
-            let k_i = self.level_keys[level].round_keys[r];
-            
-            // Compute partners and canonicals for all values
-            let partners: Vec<u64> = vals.iter()
-                .map(|&x| (k_i + n - (x % n)) % n)
-                .collect();
-            let canonicals: Vec<u64> = vals.iter().zip(partners.iter())
-                .map(|(&x, &p)| x.max(p))
-                .collect();
-            
-            // Batch prf_bit evaluation
-            let swap_bits = self.prf_bits_batch_internal(level, r, &canonicals);
-            
-            // Apply swaps
-            for i in 0..vals.len() {
-                if swap_bits[i] {
-                    vals[i] = partners[i];
-                }
-            }
-        }
-    }
-
-    /// Internal batch prf_bit for batch processing using parallel AES-NI
-    fn prf_bits_batch_internal(&self, level: usize, round: usize, canonicals: &[u64]) -> Vec<bool> {
-        use aes::cipher::typenum::U16;
-        use aes::cipher::BlockEncrypt;
-        
-        let combined = ((level as u64) << 32) | (round as u64) | 0x80000000;
-        let combined_bytes = combined.to_be_bytes();
-        
-        let mut results = Vec::with_capacity(canonicals.len());
-        
-        // Process in chunks of 8 for AES-NI parallel encryption
-        for chunk in canonicals.chunks(8) {
-            // Build blocks array
-            let mut blocks: [GenericArray<u8, U16>; 8] = Default::default();
-            let chunk_len = chunk.len();
-            
-            for (i, &canonical) in chunk.iter().enumerate() {
-                let mut input = [0u8; 16];
-                input[0..8].copy_from_slice(&combined_bytes);
-                input[8..16].copy_from_slice(&canonical.to_be_bytes());
-                blocks[i] = GenericArray::from(input);
-            }
-            
-            // Encrypt all 8 blocks in parallel using AES-NI
-            self.cipher.encrypt_blocks(&mut blocks[..chunk_len]);
-            
-            for i in 0..chunk_len {
-                results.push((blocks[i][0] & 1) == 1);
-            }
-        }
-        
-        results
-    }
-
-    /// Parallel batch inverse using rayon for multi-core parallelism.
-    ///
-    /// Splits the input into chunks and processes them in parallel across CPU cores.
-    /// Each chunk uses the batch inverse optimization internally.
-    ///
-    /// Best for large batches (>10K elements).
-    pub fn inverse_batch_parallel(&self, ys: &[u64], chunk_size: usize) -> Vec<u64> {
-        use rayon::prelude::*;
-        
-        if ys.len() < chunk_size {
-            return self.inverse_batch(ys);
-        }
-        
-        // Process chunks in parallel
-        let results: Vec<Vec<(usize, u64)>> = ys
-            .par_chunks(chunk_size)
-            .enumerate()
-            .map(|(chunk_idx, chunk)| {
-                let base_idx = chunk_idx * chunk_size;
-                let chunk_results = self.inverse_batch(chunk);
-                chunk_results
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, v)| (base_idx + i, v))
-                    .collect()
-            })
-            .collect();
-        
-        // Flatten and reorder
-        let mut output = vec![0u64; ys.len()];
-        for chunk_results in results {
-            for (idx, val) in chunk_results {
-                output[idx] = val;
-            }
-        }
-        
-        output
     }
 }
 
@@ -723,17 +337,11 @@ impl SwapOrNotSr {
 ///
 /// Round counts are computed per Morris-Rogaway Section 5 "Strategy 1" (equal error split)
 /// with 128-bit security by default.
-///
-/// Optimization: All round keys are precomputed at construction time to eliminate
-/// half of the AES operations during forward/inverse evaluation.
 pub struct SwapOrNotSrTee {
     cipher: Aes128,
     domain: u64,
     max_levels: usize,
-    #[allow(dead_code)]
     security_bits: u32,
-    /// Precomputed round keys for each SR level
-    level_keys: Vec<SrLevelKeys>,
 }
 
 impl SwapOrNotSrTee {
@@ -750,17 +358,24 @@ impl SwapOrNotSrTee {
             (domain as f64).log2().ceil() as usize
         };
 
-        // Precompute all round keys for all levels (reuse SwapOrNotSr helper)
-        let level_keys =
-            SwapOrNotSr::precompute_all_keys(&cipher, domain, max_levels, security_bits);
-
         Self {
             cipher,
             domain,
             max_levels,
             security_bits,
-            level_keys,
         }
+    }
+
+    fn derive_round_key(&self, level: usize, round: usize, n: u64) -> u64 {
+        let mut input = [0u8; 16];
+        let combined = ((level as u64) << 32) | (round as u64);
+        input[0..8].copy_from_slice(&combined.to_be_bytes());
+        input[8..16].copy_from_slice(&n.to_be_bytes());
+
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+
+        u64::from_be_bytes(block[0..8].try_into().unwrap()) % n
     }
 
     fn prf_bit_ct(&self, level: usize, round: usize, canonical: u64) -> u64 {
@@ -775,11 +390,10 @@ impl SwapOrNotSrTee {
         (block[0] & 1) as u64
     }
 
-    /// Apply one round using precomputed round key (constant-time)
-    fn round_ct_with_key(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
+    fn round_ct(&self, level: usize, round_num: usize, n: u64, x: u64) -> u64 {
         use crate::constant_time::{ct_lt_u64, ct_select_u64};
 
-        let k_i = self.level_keys[level].round_keys[round_num];
+        let k_i = self.derive_round_key(level, round_num, n);
         let partner = (k_i + n - (x % n)) % n;
 
         let x_lt_partner = ct_lt_u64(x, partner);
@@ -790,19 +404,19 @@ impl SwapOrNotSrTee {
     }
 
     fn apply_rounds_forward(&self, level: usize, n: u64, x: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = x;
-        for r in 0..num_rounds {
-            val = self.round_ct_with_key(level, r, n, val);
+        for r in 0..t {
+            val = self.round_ct(level, r, n, val);
         }
         val
     }
 
     fn apply_rounds_inverse(&self, level: usize, n: u64, y: u64) -> u64 {
-        let num_rounds = self.level_keys[level].round_keys.len();
+        let t = sr_t_rounds_with_security(n, self.domain, self.security_bits);
         let mut val = y;
-        for r in (0..num_rounds).rev() {
-            val = self.round_ct_with_key(level, r, n, val);
+        for r in (0..t).rev() {
+            val = self.round_ct(level, r, n, val);
         }
         val
     }
@@ -812,12 +426,12 @@ impl SwapOrNotSrTee {
 
         debug_assert!(x < self.domain, "x must be < domain");
         let mut val = x % self.domain;
+        let mut n = self.domain;
         let mut result = 0u64;
         let mut done = 0u64;
 
-        for level in 0..self.level_keys.len() {
-            let n = self.level_keys[level].n;
-            let should_skip = done;
+        for level in 0..self.max_levels {
+            let should_skip = ct_ge_u64(1, n) | done;
 
             val = ct_select_u64(should_skip, val, self.apply_rounds_forward(level, n, val));
 
@@ -825,38 +439,40 @@ impl SwapOrNotSrTee {
             let exited = ct_ge_u64(val, half);
             result = ct_select_u64(exited & (1 - done), val, result);
             done |= exited;
+
+            n = ct_select_u64(should_skip, n, half);
         }
 
         ct_select_u64(done, result, val)
     }
 
     pub fn inverse(&self, y: u64) -> u64 {
-        use crate::constant_time::{ct_eq_u64, ct_ge_u64, ct_lt_u64, ct_select_u64};
+        use crate::constant_time::{ct_eq_u64, ct_ge_u64, ct_gt_u64, ct_lt_u64, ct_select_u64};
 
         debug_assert!(y < self.domain, "y must be < domain");
         let y = y % self.domain;
 
         let mut sizes = [0u64; 64];
+        let mut n = self.domain;
         let mut stopped: u64 = 0;
 
-        for level in 0..self.level_keys.len() {
-            let n = self.level_keys[level].n;
-            let should_record = ct_eq_u64(stopped, 0);
-            sizes[level] = ct_select_u64(should_record, n, 0);
+        for i in 0..self.max_levels {
+            let should_record = ct_gt_u64(n, 1) & ct_eq_u64(stopped, 0);
+            sizes[i] = ct_select_u64(should_record, n, 0);
 
             let half = n / 2;
             let y_in_right = ct_ge_u64(y, half);
             let stopping_now = should_record & y_in_right;
             stopped = ct_select_u64(stopping_now, 1, stopped);
+
+            n = ct_select_u64(should_record & ct_eq_u64(stopped, 0), half, n);
         }
 
         let mut val = y;
-        for level in (0..self.level_keys.len()).rev() {
+        for level in (0..self.max_levels).rev() {
             let n_lvl = sizes[level];
             let skip = ct_lt_u64(n_lvl, 2);
-            // Use level's actual n to avoid division by zero; skip flag handles correctness
-            let safe_n = self.level_keys[level].n;
-            val = ct_select_u64(skip, val, self.apply_rounds_inverse(level, safe_n, val));
+            val = ct_select_u64(skip, val, self.apply_rounds_inverse(level, n_lvl, val));
         }
         val
     }
@@ -1157,14 +773,6 @@ impl Iprf {
     /// tree depth as ceil(log2(m)), and derives a separate 128-bit key (SHA-256(key || "prp"))
     /// to initialize the internal Sometimes-Recurse PRP over the input domain `n`.
     pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
-        Self::with_security(key, n, m, DEFAULT_SECURITY_BITS)
-    }
-
-    /// Creates a new iPRF with explicit SR PRP security parameter.
-    ///
-    /// The `security_bits` parameter controls the round count in the Sometimes-Recurse PRP.
-    /// Lower values (e.g., 64) significantly speed up computation but provide weaker PRP security.
-    pub fn with_security(key: PrfKey128, n: u64, m: u64, security_bits: u32) -> Self {
         let tree_depth = (m as f64).log2().ceil() as usize;
         let cipher = Aes128::new(&GenericArray::from(key));
 
@@ -1176,7 +784,7 @@ impl Iprf {
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
 
-        let prp = SwapOrNotSr::with_security(prp_key, n, security_bits);
+        let prp = SwapOrNotSr::new(prp_key, n);
 
         Self {
             key,
@@ -1196,33 +804,6 @@ impl Iprf {
         // Apply PRP first, then PMNS
         let permuted = self.prp.forward(x);
         self.trace_ball(permuted, self.domain, self.range)
-    }
-
-    /// Batch forward evaluation for multiple inputs.
-    ///
-    /// Achieves ~3-4x speedup over sequential forward.
-    pub fn forward_batch(&self, xs: &[u64]) -> Vec<u64> {
-        // Batch PRP forward
-        let permuted = self.prp.forward_batch(xs);
-        // Apply PMNS to each (PMNS is cheap, PRP is the bottleneck)
-        permuted.iter()
-            .map(|&p| self.trace_ball(p, self.domain, self.range))
-            .collect()
-    }
-
-    /// Parallel batch forward using rayon for multi-core parallelism.
-    ///
-    /// Best for large batches (>10K elements). Achieves ~10-20x speedup.
-    pub fn forward_batch_parallel(&self, xs: &[u64], chunk_size: usize) -> Vec<u64> {
-        use rayon::prelude::*;
-        
-        if xs.len() < chunk_size {
-            return self.forward_batch(xs);
-        }
-        
-        xs.par_chunks(chunk_size)
-            .flat_map(|chunk| self.forward_batch(chunk))
-            .collect()
     }
 
     /// Compute all input values `x` in the domain that map to the given output `y`.

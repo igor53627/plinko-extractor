@@ -1,9 +1,0 @@
-{
-  "name": "baseline_64",
-  "transforms": ["T1_PRECOMPUTE_KEYS"],
-  "params": {
-    "security_bits": 64,
-    "batch_size": 1
-  },
-  "description": "Reduced 64-bit security baseline"
-}
