@@ -537,9 +537,7 @@ fn main() -> eyre::Result<()> {
         // is negligible (< 2^{-100}) via Chernoff bounds.
         let expected_preimages = (total_hints + w - 1) / w;
         if expected_preimages * 2 > MAX_PREIMAGES {
-            eprintln!(
-                "Error: Parameter configuration too dense for constant-time mode."
-            );
+            eprintln!("Error: Parameter configuration too dense for constant-time mode.");
             eprintln!(
                 "       Expected preimages per offset ({}) exceeds MAX_PREIMAGES/2 ({}).",
                 expected_preimages,
@@ -630,7 +628,11 @@ fn main() -> eyre::Result<()> {
 
                 // Masked XOR: if mask == 1, dst ^= src; if mask == 0, no-op.
                 // Both paths execute the same instructions (constant time).
-                ct_xor_32_masked(&mut regular_hints[regular_idx].parity, &entry, update_regular);
+                ct_xor_32_masked(
+                    &mut regular_hints[regular_idx].parity,
+                    &entry,
+                    update_regular,
+                );
                 ct_xor_32_masked(
                     &mut backup_hints[backup_idx_clamped].parity_in,
                     &entry,
@@ -1029,13 +1031,24 @@ mod tests {
                 let update_backup_out = in_range & is_backup & (1 - in_backup_subset);
 
                 ct_xor_32_masked(&mut ct_regular[regular_idx], entry, update_regular);
-                ct_xor_32_masked(&mut ct_backup_in[backup_idx_clamped], entry, update_backup_in);
-                ct_xor_32_masked(&mut ct_backup_out[backup_idx_clamped], entry, update_backup_out);
+                ct_xor_32_masked(
+                    &mut ct_backup_in[backup_idx_clamped],
+                    entry,
+                    update_backup_in,
+                );
+                ct_xor_32_masked(
+                    &mut ct_backup_out[backup_idx_clamped],
+                    entry,
+                    update_backup_out,
+                );
             }
         }
 
         assert_eq!(fast_regular, ct_regular, "Regular parities mismatch");
         assert_eq!(fast_backup_in, ct_backup_in, "Backup in-parities mismatch");
-        assert_eq!(fast_backup_out, ct_backup_out, "Backup out-parities mismatch");
+        assert_eq!(
+            fast_backup_out, ct_backup_out,
+            "Backup out-parities mismatch"
+        );
     }
 }
