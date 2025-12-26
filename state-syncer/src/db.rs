@@ -137,10 +137,10 @@ fn derive_plinko_params(db_entries: u64) -> (u64, u64) {
 
     // Integer ceiling division: ceil(db_entries / chunk_size)
     // Matches Coq: ceil_div db_entries chunk_size
-    let mut set_size = (db_entries + chunk_size - 1) / chunk_size;
+    let mut set_size = db_entries.div_ceil(chunk_size);
     // Round up to nearest multiple of 4 (SIMD friendly alignment)
     // Matches Coq: round_up_multiple set_size_raw 4
-    set_size = (set_size + 3) / 4 * 4;
+    set_size = set_size.div_ceil(4) * 4;
     (chunk_size, set_size)
 }
 
@@ -154,7 +154,7 @@ fn isqrt(n: u64) -> u64 {
     // Initial guess must be >= sqrt(n) for Newton to converge from above
     // Use 2^ceil((log2(n)+1)/2) which is always >= sqrt(n)
     let bits = 64 - n.leading_zeros(); // bits = floor(log2(n)) + 1
-    let shift = (bits + 1) / 2; // ceil((bits)/2)
+    let shift = bits.div_ceil(2); // ceil((bits)/2)
     let mut x = 1u64 << shift;
 
     loop {
