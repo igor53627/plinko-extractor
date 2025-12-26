@@ -55,12 +55,21 @@ pub fn validate_args(args: &Args) -> eyre::Result<()> {
 }
 
 /// Validate that hint parameters are within bounds for CT mode.
-pub fn validate_hint_params(params: &HintParams) -> eyre::Result<()> {
-    if params.total_hints > MAX_PREIMAGES {
+///
+/// For Plinko with (lambda, w, q), expected preimages per offset = (lambda*w + q) / w.
+/// With default q = lambda*w: expected = 2*lambda = 256 for lambda=128.
+///
+/// We require expected * 2 <= MAX_PREIMAGES to ensure truncation probability
+/// is negligible (< 2^{-100}) via Chernoff bounds.
+pub fn validate_hint_params(params: &HintParams, w: usize) -> eyre::Result<()> {
+    let expected_preimages = (params.total_hints + w - 1) / w;
+    if expected_preimages * 2 > MAX_PREIMAGES {
         eyre::bail!(
-            "total_hints ({}) exceeds MAX_PREIMAGES ({}); reduce lambda or backup_hints",
-            params.total_hints,
-            MAX_PREIMAGES
+            "Parameter configuration too dense for constant-time mode.\n\
+             Expected preimages per offset ({}) exceeds MAX_PREIMAGES/2 ({}).\n\
+             Reduce total_hints or increase w.",
+            expected_preimages,
+            MAX_PREIMAGES / 2
         );
     }
     Ok(())

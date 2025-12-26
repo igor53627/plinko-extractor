@@ -39,7 +39,7 @@ fn main() -> eyre::Result<()> {
 
     let params = HintParams::from_args(&args, geom.w);
     if args.constant_time {
-        validate_hint_params(&params)?;
+        validate_hint_params(&params, geom.w)?;
     }
     println!("\nHint Structure:");
     println!("  Regular hints: {}", params.num_regular);
