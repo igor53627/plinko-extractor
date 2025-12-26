@@ -2,8 +2,16 @@
 
 # Rocq 9.x uses 'rocq compile' instead of 'coqc'
 # Fall back to coqc/coqdep for compatibility with older versions
-COQC ?= $(shell command -v rocq >/dev/null 2>&1 && echo "rocq compile" || echo "coqc")
-COQDEP ?= $(shell command -v rocq >/dev/null 2>&1 && echo "rocq dep" || echo "coqdep")
+ROCQ_AVAILABLE := $(shell command -v rocq >/dev/null 2>&1 && echo yes || echo no)
+ifeq ($(ROCQ_AVAILABLE),yes)
+  COQC ?= rocq compile
+  COQDEP ?= rocq dep
+  COQC_BIN := rocq
+else
+  COQC ?= coqc
+  COQDEP ?= coqdep
+  COQC_BIN := coqc
+endif
 
 # Path to RocqOfRust library (can be overridden via environment or command line)
 ROCQOFRUST_PATH ?= $(HOME)/rocq-of-rust/RocqOfRust
@@ -114,7 +122,7 @@ depend:
 # Translate Rust to Rocq using rocq-of-rust
 translate:
 	@echo "Translating Plinko Rust code to Rocq..."
-	cd ../.. && cargo +nightly-2025-04-05 rocq-of-rust -- --manifest-path state-syncer/Cargo.toml
+	cd ../.. && cargo +nightly-2024-12-07 rocq-of-rust -- --manifest-path state-syncer/Cargo.toml
 	@echo "Translation complete. Check src/ for generated .v files."
 
 # Clean generated files
@@ -128,7 +136,7 @@ clean:
 
 # Check if dependencies are installed
 check-deps:
-	@which $(COQC) > /dev/null || (echo "Error: coqc not found. Install Rocq first." && exit 1)
+	@which $(COQC_BIN) > /dev/null || (echo "Error: coqc/rocq not found. Install Rocq first." && exit 1)
 	@echo "Rocq version: $$($(COQC) --version)"
 	@if [ -d "$(ROCQOFRUST_PATH)" ]; then \
 		echo "RocqOfRust: $(ROCQOFRUST_PATH)"; \
