@@ -19,6 +19,9 @@ pub fn compute_backup_blocks(seed: &[u8; 32], c: usize) -> Vec<usize> {
     blocks
 }
 
+/// Returns true if `block` is in the sorted `blocks` slice.
+///
+/// Precondition: `blocks` must be sorted in ascending order.
 pub fn block_in_subset(blocks: &[usize], block: usize) -> bool {
     blocks.binary_search(&block).is_ok()
 }

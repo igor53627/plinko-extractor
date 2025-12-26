@@ -23,7 +23,7 @@ pub fn process_entries_ct(
     backup_hints: &mut [BackupHint],
     progress_callback: impl Fn(usize),
 ) {
-    debug_assert!(
+    assert!(
         num_backup >= 1 && !backup_bitsets.is_empty() && !backup_hints.is_empty(),
         "CT path requires at least 1 backup hint for safe dummy indexing"
     );
