@@ -1,5 +1,9 @@
 # Plinko Extractor - Agent Rules
 
+## Code Environment
+
+- **Codex Code Env ID**: `694e8588110c8191945f9b9dfbf0b7d1`
+
 ## Canonical Protocol Reference
 
 **`docs/plinko_paper_index.json`** is the canonical source of truth for Plinko protocol implementation details. It indexes:
