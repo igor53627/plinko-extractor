@@ -1,5 +1,31 @@
 # Plinko Extractor - Agent Rules
 
+## Code Environment
+
+- **Codex Code Env ID**: `694e8588110c8191945f9b9dfbf0b7d1`
+
+## Codex Cloud Tasks
+
+For complex or long-running tasks (formal proofs, large refactors), use Codex Cloud:
+
+```bash
+# Submit a task to Codex Cloud (runs remotely with gpt-5.2-codex + xhigh reasoning)
+codex cloud exec --env 694e8588110c8191945f9b9dfbf0b7d1 --attempts 3 "Your task description"
+
+# Check task status
+codex cloud status <task_id>
+
+# View diff from completed task
+codex cloud diff <task_id>
+
+# Apply changes locally
+codex cloud apply <task_id>
+```
+
+Options:
+- `--attempts N`: Run N parallel attempts (best-of-N), use 3 for complex proofs
+- `--branch <branch>`: Target a specific git branch
+
 ## Canonical Protocol Reference
 
 **`docs/plinko_paper_index.json`** is the canonical source of truth for Plinko protocol implementation details. It indexes:
@@ -39,10 +65,10 @@ cd state-syncer && cargo build --release --bin plinko_hints
   --db-path /mnt/mainnet/plinko/database.bin \
   --lambda 128
 
-# Generate hints (XOF mode - faster)
+# Generate hints (constant-time mode for TEE)
 ./state-syncer/target/release/plinko_hints \
   --db-path /mnt/mainnet/plinko/database.bin \
-  --lambda 128 --xof
+  --lambda 128 --constant-time
 ```
 
 ## Data Format
@@ -91,6 +117,13 @@ Before committing Rust changes to hint generation or iPRF:
 | Coq HintInit | `docs/Plinko.v` (hint_init, process_db_entry) |
 | iPRF Spec | `plinko/formal/specs/IprfSpec.v` |
 | PRP Spec | `plinko/formal/specs/SwapOrNotSpec.v` |
+
+## Documentation Sync Rules
+
+When modifying `state-syncer/src/bin/hint_gen/`:
+- Update `docs/hint_generation.md` if module structure or API changes
+- Update `docs/constant_time_mode.md` if CT security model changes
+- Keep the module table in `docs/hint_generation.md` current with file sizes
 
 ## Devin DeepWiki
 

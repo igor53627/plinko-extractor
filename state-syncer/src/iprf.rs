@@ -590,7 +590,7 @@ impl IprfTee {
 
         let mut prp_key = [0u8; 16];
         let mut hasher = Sha256::new();
-        hasher.update(&key);
+        hasher.update(key);
         hasher.update(b"prp");
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
@@ -779,7 +779,7 @@ impl Iprf {
         // Derive a separate key for PRP from main key
         let mut prp_key = [0u8; 16];
         let mut hasher = Sha256::new();
-        hasher.update(&key);
+        hasher.update(key);
         hasher.update(b"prp");
         let hash = hasher.finalize();
         prp_key.copy_from_slice(&hash[0..16]);
@@ -937,9 +937,9 @@ impl Iprf {
 /// `encode_node` is a parameter that can be instantiated to match this behavior.
 fn encode_node(low: u64, high: u64, n: u64) -> u64 {
     let mut hasher = Sha256::new();
-    hasher.update(&low.to_be_bytes());
-    hasher.update(&high.to_be_bytes());
-    hasher.update(&n.to_be_bytes());
+    hasher.update(low.to_be_bytes());
+    hasher.update(high.to_be_bytes());
+    hasher.update(n.to_be_bytes());
     let result = hasher.finalize();
     u64::from_be_bytes(result[0..8].try_into().unwrap())
 }

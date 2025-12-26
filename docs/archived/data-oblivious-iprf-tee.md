@@ -1,3 +1,6 @@
+> [!CAUTION]
+> **OBSOLETE** - This spec was implemented in PR #67. See [docs/constant_time_mode.md](../constant_time_mode.md) for current documentation.
+
 # Implement Data-Oblivious iPRF for TEE Server-Side Hint Generation
 
 ## Summary

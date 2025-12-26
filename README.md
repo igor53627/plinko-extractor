@@ -106,13 +106,21 @@ cd state-syncer && cargo build --release --bin plinko_hints
   --db-path ./database.bin \
   --lambda 128
 
-# Generate hints (XOF mode - faster at low λ)
+# Generate hints (constant-time mode for TEE)
 ./target/release/plinko_hints \
   --db-path ./database.bin \
-  --lambda 128 --xof
+  --lambda 128 --constant-time
 ```
 
-See [docs/xof-optimization.md](docs/xof-optimization.md) for details on the XOF optimization.
+### Constant-Time Mode
+
+The `--constant-time` flag enables timing side-channel protection for TEE execution:
+
+- Uses fixed-iteration loops (MAX_PREIMAGES=512) to prevent leaking preimage counts
+- `BlockBitset` for O(1) branchless membership testing
+- `ct_xor_32_masked` for conditional XOR without control flow
+
+This mode is ~2-3x slower than the standard path but prevents timing attacks that could leak which hints contain which database entries. Note: cache side-channels are out of scope (would require ORAM).
 
 ### Benchmark Results (Mainnet, λ=128, w=49177)
 

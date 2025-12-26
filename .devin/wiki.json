@@ -13,6 +13,10 @@
       "author": "maintainer"
     },
     {
+      "content": "Constant-time HintInit (--constant-time flag) for TEE execution: Uses IprfTee::inverse_ct with fixed MAX_PREIMAGES=512 iterations, BlockBitset for O(1) membership testing, ct_select_usize for branchless index clamping, and ct_xor_32_masked for conditional XOR. Protects against timing side-channels; cache side-channels are out of scope (would require ORAM). Verified against Plinko.v Coq spec and paper Fig. 7.",
+      "author": "maintainer"
+    },
+    {
       "content": "Key video resource: Alex Hoover's talk 'Plinko - Single-Server PIR with Efficient Updates via Invertible PRFs' at https://www.youtube.com/watch?v=okJaBn7ZXnc",
       "author": "maintainer"
     },
@@ -38,7 +42,7 @@
     },
     {
       "title": "Hint Generation",
-      "purpose": "Document state-syncer/src/bin/plinko_hints.rs: streaming HintInit, regular/backup hints, seed-based storage",
+      "purpose": "Document state-syncer/src/bin/plinko_hints.rs: streaming HintInit, regular/backup hints, seed-based storage, constant-time mode (--constant-time) for TEE execution with BlockBitset, ct_select_usize, ct_xor_32_masked",
       "parent": "Plinko Protocol"
     },
     {

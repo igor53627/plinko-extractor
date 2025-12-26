@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Constant-time HintInit for TEE execution** (`--constant-time` flag): Issue #62
+  - Eliminates timing side-channels that could leak iPRF mappings during hint generation
+  - Uses `IprfTee::inverse_ct` with fixed MAX_PREIMAGES=512 iterations (no early exit)
+  - `BlockBitset` struct for O(1) constant-time block membership testing
+  - Branchless index clamping via `ct_select_usize` to prevent secret-dependent branches
+  - `ct_xor_32_masked` for conditional parity XOR without control flow
+  - Parameter guards: validates MAX_PREIMAGES sufficiency, num_regular/num_backup > 0
+  - Security model: protects against timing side-channels; cache side-channels out of scope
+    (would require ORAM for full memory-access obliviousness)
+  - Verified against Plinko.v Coq spec and paper Fig. 7 HintInit algorithm
 - **TEE constant-time exact binomial sampler** (`binomial_sample_tee`): Issue #41 fix
   - True Binomial(n,p) distribution using inverse-CDF with fixed iterations
   - O(CT_BINOMIAL_MAX_COUNT) complexity with constant-time float comparison and selection
