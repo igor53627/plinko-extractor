@@ -181,7 +181,23 @@ Both paths implement true Binomial(n, p) sampling consistent with the formal spe
 
 ### Formal Verification
 
-See [kani_proofs.rs](state-syncer/src/kani_proofs.rs) for all verification harnesses.
+The `plinko/formal/` directory contains Rocq (Coq) specifications and proofs.
+
+**Rocq Specs** (`plinko/formal/specs/`):
+- `SwapOrNotSpec.v`, `SwapOrNotSrSpec.v`: Swap-or-Not PRP and Sometimes-Recurse wrapper
+- `IprfSpec.v`: Invertible PRF combining PRP + PMNS
+- `BinomialSpec.v`, `TrueBinomialSpec.v`: Binomial sampling specifications
+
+**Rocq Proofs** (`plinko/formal/proofs/`):
+- `SwapOrNotProofs.v`: Round involution, forward/inverse identity, bijection
+- `IprfProofs.v`: iPRF partition property, inverse consistency
+
+**Trust Base** (intentional axioms):
+- Crypto: AES-128 encryption, key derivation properties
+- Math: `binomial_theorem_Z` (standard combinatorial identity)
+- FFI: Rust↔Rocq refinement axioms (verified via proptest)
+
+See [kani_proofs.rs](state-syncer/src/kani_proofs.rs) for Rust verification harnesses.
 
 **Kani** (bit-precise model checking):
 - `binomial_sample`: Output bounded, matches Coq definition exactly
@@ -198,6 +214,9 @@ cd state-syncer && cargo kani --tests
 
 # Run proptest harnesses
 cd state-syncer && cargo test --lib kani_proofs
+
+# Run Rocq proofs
+cd plinko/formal && make
 ```
 
 ### Documentation
