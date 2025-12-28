@@ -365,41 +365,22 @@ Qed.
 
 (** ** Lemmas for trace_ball_inverse *)
 
-(** Binomial sample range axiom for the PMNS algorithm.
-
-    MATHEMATICAL STATUS: This axiom is FALSE for count = 0. When count = 0:
-      binomial_sample_spec 0 num denom prf = (0 * num + r) / denom = r / denom
-    where 0 <= r <= denom, so the result can be 1, violating <= count = 0.
-
-    JUSTIFICATION: In the PMNS algorithm, binomial_sample is used to distribute
-    balls among bins. When ball_count > 0, this bound holds (proven in 
-    binomial_sample_range in BinomialSpec.v). The count = 0 case represents
-    "no balls to distribute" which doesn't occur on algorithm paths that matter
-    for correctness. All meaningful call sites maintain count > 0.
-
-    ALTERNATIVE: Refactor all lemmas to:
-    1. Add 0 < count precondition, or
-    2. Use case analysis with binomial_sample_range_zero for count = 0
-    This requires significant proof restructuring (estimated 1-2 days).
-
-    NOTE: Cannot link to TrueBinomialSpec.true_binomial_range because:
-    - binomial_sample_spec (BinomialSpec): fast approximation using modular arithmetic
-    - true_binomial_sample_spec (TrueBinomialSpec): exact inverse-CDF binomial sampler
-    These are fundamentally different functions with different statistical properties.
-
-    See also: binomial_sample_range (proven, for count > 0) in BinomialSpec.v *)
-Axiom binomial_sample_range_aux :
+Lemma binomial_sample_range_aux :
   forall count num denom prf_output,
     0 <= count ->
     0 <= num ->
     num < denom ->
     0 < denom ->
     0 <= binomial_sample_spec count num denom prf_output <= count.
+Proof.
+  intros count num denom prf_output Hcount Hnum Hnum_lt Hdenom.
+  apply binomial_sample_range_full; assumption.
+Qed.
 
 
 
 (** Invariant for trace_ball_inverse_fuel: the (start, count) returned satisfy bounds.
-    Note: relies on binomial_sample_range_aux axiom for count >= 0. *)
+    Note: relies on binomial_sample_range_aux for count >= 0. *)
 Lemma trace_ball_inverse_fuel_bounds : forall fuel y st n,
   0 <= tis_ball_start st ->
   0 <= tis_ball_count st ->

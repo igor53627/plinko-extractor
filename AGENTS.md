@@ -60,6 +60,39 @@ ssh root@108.61.166.134 "systemctl status rocq-verify nginx"
 ssh root@108.61.166.134 "tail -f /var/log/nginx/access.log"
 ```
 
+### Evaluating Multiple Attempts
+
+When using `--attempts N`, always check ALL attempts before applying:
+
+```bash
+# View each attempt's diff
+for i in 1 2 3; do echo "=== Attempt $i ==="; codex cloud diff <task_id> --attempt $i | head -20; done
+
+# Apply specific attempt
+codex cloud apply <task_id> --attempt <N>
+```
+
+**Evaluation criteria (in priority order):**
+
+1. **Compiles** - Must verify with remote Rocq server (mandatory, disqualifies if fails)
+2. **No new axioms/Admitted** - Solution shouldn't introduce new proof debt
+3. **Minimal changes** - Fewer lines = less risk of breaking other proofs
+4. **Semantic correctness** - Doesn't change function definitions unless necessary
+5. **Proof quality**:
+   - Direct proofs > convoluted ones
+   - Reuses existing lemmas > duplicates logic
+   - Clear structure (induction base/step separated)
+6. **Helper lemmas** - General/reusable > one-off hacks
+
+**Quick comparison:**
+```bash
+# Line count per attempt
+for i in 1 2 3; do echo "Attempt $i: $(codex cloud diff <task_id> --attempt $i 2>&1 | grep -c '^[+-]') lines"; done
+
+# Check for new Admitted/Axiom
+for i in 1 2 3; do echo "Attempt $i:"; codex cloud diff <task_id> --attempt $i 2>&1 | grep -E "^\+.*Admitted|^\+.*Axiom"; done
+```
+
 ## Canonical Protocol Reference
 
 **`docs/plinko_paper_index.json`** is the canonical source of truth for Plinko protocol implementation details. It indexes:

@@ -13,6 +13,8 @@ Open Scope Z_scope.
 Definition binomial_sample_spec (count num denom prf_output : Z) : Z :=
   if Z.eqb denom 0 then
     0
+  else if Z.eqb count 0 then
+    0
   else
     (count * num + (prf_output mod (denom + 1))) / denom.
 
@@ -44,7 +46,8 @@ Proof.
   intros count num denom prf_output Hcount_pos Hnum Hnum_lt Hdenom.
   unfold binomial_sample_spec.
   assert (Hdenom_neq: Z.eqb denom 0 = false) by (apply Z.eqb_neq; lia).
-  rewrite Hdenom_neq.
+  assert (Hcount_neq: Z.eqb count 0 = false) by (apply Z.eqb_neq; lia).
+  rewrite Hdenom_neq, Hcount_neq.
   set (r := prf_output mod (denom + 1)).
   assert (Hr_bounds: 0 <= r < denom + 1).
   { subst r. apply Z.mod_pos_bound. lia. }
@@ -62,26 +65,34 @@ Proof.
     lia.
 Qed.
 
-(** For count = 0, the result is in [0, 1] rather than [0, 0].
-    This case doesn't arise in the main PMNS algorithm since we always have ball_count > 0
-    when distributing balls. *)
+(** For count = 0, the result is exactly 0 (degenerate binomial with no trials). *)
 Lemma binomial_sample_range_zero :
   forall num denom prf_output,
     0 <= num ->
     num < denom ->
     0 < denom ->
-    0 <= binomial_sample_spec 0 num denom prf_output <= 1.
+    0 <= binomial_sample_spec 0 num denom prf_output <= 0.
 Proof.
   intros num denom prf_output Hnum Hnum_lt Hdenom.
   unfold binomial_sample_spec.
   assert (Hdenom_neq: Z.eqb denom 0 = false) by (apply Z.eqb_neq; lia).
   rewrite Hdenom_neq. simpl.
-  set (r := prf_output mod (denom + 1)).
-  assert (Hr_bounds: 0 <= r <= denom).
-  { subst r. pose proof (Z.mod_pos_bound prf_output (denom + 1)). lia. }
-  split.
-  - apply Z.div_pos; lia.
-  - apply Z.div_le_upper_bound; lia.
+  lia.
+Qed.
+
+(** Combined range lemma covering both count = 0 and count > 0 *)
+Lemma binomial_sample_range_full :
+  forall count num denom prf_output,
+    0 <= count ->
+    0 <= num ->
+    num < denom ->
+    0 < denom ->
+    0 <= binomial_sample_spec count num denom prf_output <= count.
+Proof.
+  intros count num denom prf_output Hcount Hnum Hnum_lt Hdenom.
+  destruct (Z.eq_dec count 0) as [Hcount_zero | Hcount_pos].
+  - subst count. apply binomial_sample_range_zero; assumption.
+  - apply binomial_sample_range; lia.
 Qed.
 
 (** Monotonicity: larger count gives larger or equal result *)
@@ -98,9 +109,23 @@ Proof.
   unfold binomial_sample_spec.
   assert (Hdenom_neq: Z.eqb denom 0 = false) by (apply Z.eqb_neq; lia).
   rewrite Hdenom_neq.
-  apply Z.div_le_mono.
-  - lia.
-  - assert (count1 * num <= count2 * num) by nia. lia.
+  destruct (Z.eq_dec count1 0) as [Hc1_zero | Hc1_pos].
+  - subst count1. simpl.
+    destruct (Z.eq_dec count2 0) as [Hc2_zero | Hc2_pos].
+    + subst count2. simpl. lia.
+    + assert (Hc2_neq : Z.eqb count2 0 = false) by (apply Z.eqb_neq; lia).
+      rewrite Hc2_neq.
+      apply Z.div_pos; try lia.
+      apply Z.add_nonneg_nonneg.
+      * apply Z.mul_nonneg_nonneg; lia.
+      * apply Z.mod_pos_bound. lia.
+  - assert (Hc2_pos : 0 < count2) by lia.
+    assert (Hc1_neq : Z.eqb count1 0 = false) by lia.
+    assert (Hc2_neq : Z.eqb count2 0 = false) by lia.
+    rewrite Hc1_neq, Hc2_neq.
+    apply Z.div_le_mono.
+    + lia.
+    + assert (count1 * num <= count2 * num) by nia. lia.
 Qed.
 
 (** Predicate form for use in other specifications *)
