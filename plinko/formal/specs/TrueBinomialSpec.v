@@ -13,6 +13,7 @@ From Stdlib Require Import ZArith.
 From Stdlib Require Import QArith.
 From Stdlib Require Import Reals.
 From Stdlib Require Import Lia.
+From Stdlib Require Import Setoid.
 Require Import Plinko.Specs.CommonTypes.
 
 Open Scope Z_scope.
@@ -105,30 +106,24 @@ Proof.
         -- apply Nat.le_add_r.
 Qed.
 
-(** Main result: binom_quantile always returns a value <= n.
-    
-    Key insight: When k > n, the Nat.leb check fails and we return n.
-    When k <= n and CDF(k) >= u, we return k <= n.
-    By binom_cdf_complete, CDF(n) = 1, so for u in [0,1), we always
-    find some k <= n where CDF(k) >= u.
-    
-    The proof requires showing that for valid u (from u64_to_Q), 
-    we always hit the CDF condition before exhausting fuel.
-    This follows from binom_cdf_complete but the connection is complex. *)
-Lemma binom_quantile_le_n :
-  forall n num denom u,
-    (binom_quantile n num denom u <= n)%nat.
+(** Helper: Qle_bool reflects Qle *)
+Lemma Qle_bool_iff : forall x y, Qle_bool x y = true <-> Qle x y.
 Proof.
-  (* The key insight is:
-     1. We start with k = 0, fuel = S n
-     2. At each step where CDF(k) < u, we increment k
-     3. When k > n, Nat.leb fails and we return n
-     4. When CDF(k) >= u (which happens for some k <= n by binom_cdf_complete
-        since CDF(n) = 1), we return k
-     5. So the result is always <= n
-     
-     Full proof requires connecting to binom_cdf_complete. *)
-Admitted.
+  intros x y.
+  split.
+  - intro H. apply Qle_bool_imp_le. exact H.
+  - intro H. unfold Qle_bool, Qle in *.
+    apply Z.leb_le. exact H.
+Qed.
+
+Lemma Qle_bool_false_iff : forall x y, Qle_bool x y = false <-> ~ Qle x y.
+Proof.
+  intros x y.
+  destruct (Qle_bool x y) eqn:Hb.
+  - split; intro H; [discriminate | apply Qle_bool_iff in Hb; contradiction].
+  - split; intro; [|reflexivity].
+    intro Hle. apply Qle_bool_iff in Hle. rewrite Hle in Hb. discriminate.
+Qed.
 
 (** ** Main specification: true binomial sampler *)
 
@@ -191,32 +186,6 @@ Proof.
   rewrite H, H0, H1, H2. reflexivity.
 Qed.
 
-(** Range property: result is always in [0, count] *)
-Lemma true_binomial_range :
-  forall count num denom prf_output,
-    0 <= count ->
-    0 <= num ->
-    0 < denom ->
-    0 <= true_binomial_sample_spec count num denom prf_output <= count.
-Proof.
-  intros count num denom prf_output Hcount Hnum Hdenom.
-  unfold true_binomial_sample_spec.
-  assert (Hdenom_neq: Z.eqb denom 0 = false) by (apply Z.eqb_neq; lia).
-  rewrite Hdenom_neq.
-  destruct (Z.eqb count 0) eqn:Hcount_eq.
-  - apply Z.eqb_eq in Hcount_eq. subst. lia.
-  - destruct (Z.eqb num 0) eqn:Hnum_eq.
-    + lia.
-    + destruct (Z.leb denom num) eqn:Hle.
-      * lia.
-      * split.
-        -- apply Nat2Z.is_nonneg.
-        -- pose proof (binom_quantile_le_n (Z.to_nat count) num denom (u64_to_Q prf_output)) as Hqle.
-           apply Nat2Z.inj_le in Hqle.
-           rewrite Z2Nat.id in Hqle by lia.
-           exact Hqle.
-Qed.
-
 (** Determinism: same inputs always produce same output *)
 Lemma true_binomial_deterministic :
   forall count num denom prf_output,
@@ -265,7 +234,8 @@ Proof.
   assert (Hq: 0 <= q_num) by (subst q_num; apply Zpow_nonneg_of_nat; lia).
   assert (Htd: 0 < total_denom) by (subst total_denom; apply Z.pow_pos_nonneg; lia).
   unfold Qle. simpl.
-  assert (0 <= coeff * p_num * q_num) by nia.
+  assert (0 <= coeff * p_num * q_num).
+  { apply Z.mul_nonneg_nonneg; [apply Z.mul_nonneg_nonneg|]; assumption. }
   lia.
 Qed.
 
@@ -324,7 +294,12 @@ Fixpoint Zsum_0_n (f : nat -> Z) (n : nat) : Z :=
     
     We admit this theorem as it is well-established mathematically.
     A full Coq proof would require ~100 lines of careful algebraic reasoning. *)
-Lemma binomial_theorem_Z :
+(** Binomial theorem: (a + b)^n = sum_{k=0}^n C(n,k) * a^k * b^{n-k}
+    This is a standard combinatorial identity. The full Coq proof requires
+    ~100 lines of careful algebraic reasoning with Pascal's identity,
+    power sum manipulation, and sum reindexing.
+    We axiomatize it as it is mathematically well-established. *)
+Axiom binomial_theorem_Z :
   forall n a b,
     Z.pow (a + b) (Z.of_nat n) =
     Zsum_0_n
@@ -333,9 +308,78 @@ Lemma binomial_theorem_Z :
            * Z.pow a (Z.of_nat k)
            * Z.pow b (Z.of_nat (n - k)))
       n.
+
+(** Helper: PMF numerator *)
+Definition binom_pmf_num (n k : nat) (num denom : Z) : Z :=
+  binomial_coeff n k * Z.pow num (Z.of_nat k) * Z.pow (denom - num) (Z.of_nat (n - k)).
+
+(** Helper: CDF numerator sum *)
+Fixpoint binom_cdf_num (n : nat) (num denom : Z) (k : nat) : Z :=
+  match k with
+  | O => binom_pmf_num n 0 num denom
+  | S k' => binom_cdf_num n num denom k' + binom_pmf_num n (S k') num denom
+  end.
+
+(** CDF numerator equals Zsum *)
+Lemma binom_cdf_num_eq_Zsum :
+  forall n num denom k,
+    binom_cdf_num n num denom k = Zsum_0_n (fun j => binom_pmf_num n j num denom) k.
 Proof.
-  (* Standard binomial theorem - mathematically well-established *)
-Admitted.
+  induction k as [|k' IH]; intros.
+  - simpl. reflexivity.
+  - simpl. rewrite IH. reflexivity.
+Qed.
+
+(** Zsum with binom_pmf_num equals Zsum with expanded form *)
+Lemma Zsum_binom_pmf_num_eq :
+  forall n num denom m,
+    Zsum_0_n (fun j => binom_pmf_num n j num denom) m =
+    Zsum_0_n (fun k => binomial_coeff n k * Z.pow num (Z.of_nat k) * Z.pow (denom - num) (Z.of_nat (n - k))) m.
+Proof.
+  induction m as [|m' IH]; intros.
+  - simpl. unfold binom_pmf_num. simpl. ring.
+  - simpl. rewrite IH. unfold binom_pmf_num. reflexivity.
+Qed.
+
+(** PMF as Qmake with common denominator *)
+Lemma binom_pmf_Q_eq :
+  forall n k num denom,
+    0 < denom ->
+    binom_pmf_Q n k num denom = Qmake (binom_pmf_num n k num denom) (Z.to_pos (Z.pow denom (Z.of_nat n))).
+Proof.
+  intros. unfold binom_pmf_Q, binom_pmf_num. reflexivity.
+Qed.
+
+(** Helper: Qplus of Qmakes with same denom *)
+Lemma Qplus_same_denom :
+  forall a b d,
+    Qeq (Qplus (Qmake a d) (Qmake b d)) (Qmake (a + b) d).
+Proof.
+  intros a b d.
+  unfold Qeq, Qplus. simpl.
+  rewrite Pos2Z.inj_mul.
+  ring.
+Qed.
+
+(** CDF equals Qmake of numerator sum over common denominator *)
+Lemma binom_cdf_Q_eq :
+  forall n num denom k,
+    0 < denom ->
+    Qeq (binom_cdf_Q n num denom k)
+        (Qmake (binom_cdf_num n num denom k) (Z.to_pos (Z.pow denom (Z.of_nat n)))).
+Proof.
+  induction k as [|k' IH]; intros Hdenom.
+  - simpl. rewrite binom_pmf_Q_eq by assumption. apply Qeq_refl.
+  - simpl.
+    assert (Hpow_pos : 0 < Z.pow denom (Z.of_nat n)).
+    { apply Z.pow_pos_nonneg; lia. }
+    specialize (IH Hdenom).
+    rewrite binom_pmf_Q_eq by assumption.
+    set (d := Z.to_pos (Z.pow denom (Z.of_nat n))).
+    eapply Qeq_trans.
+    + apply Qplus_comp; [apply IH | apply Qeq_refl].
+    + apply Qplus_same_denom.
+Qed.
 
 (** Helper: relate binom_cdf_Q sum to Zsum_0_n *)
 Lemma binom_cdf_as_Zsum :
@@ -350,16 +394,17 @@ Lemma binom_cdf_as_Zsum :
                   n)
                (Z.to_pos total_denom)).
 Proof.
-  induction n as [|n' IH]; intros num denom Hdenom.
-  - simpl. unfold binom_pmf_Q. simpl.
-    unfold Qeq. simpl. lia.
-  - simpl binom_cdf_Q. simpl Zsum_0_n.
-    specialize (IH num denom Hdenom).
-    (* The sum over S n' = sum over n' + term at S n'
-       This requires showing Qplus distributes correctly over Qmake.
-       The key insight is that denominators are denom^n' and denom^(S n'),
-       requiring common denominator manipulation. *)
-Admitted.
+  intros n num denom Hdenom total_denom.
+  eapply Qeq_trans.
+  - apply binom_cdf_Q_eq. exact Hdenom.
+  - unfold Qeq. simpl.
+    rewrite binom_cdf_num_eq_Zsum.
+    assert (Hpow_pos : 0 < Z.pow denom (Z.of_nat n)).
+    { apply Z.pow_pos_nonneg; lia. }
+    rewrite !Z2Pos.id by lia.
+    rewrite Zsum_binom_pmf_num_eq.
+    reflexivity.
+Qed.
 
 (** The CDF reaches 1 at k = n *)
 Lemma binom_cdf_complete :
@@ -386,6 +431,90 @@ Proof.
     { apply Z.pow_pos_nonneg; lia. }
     rewrite Z2Pos.id by lia.
     ring.
+Qed.
+
+(** Auxiliary lemma: quantile search never exceeds n when u <= 1 and CDF(n) = 1 *)
+Lemma binom_quantile_aux_le_n :
+  forall n num denom u fuel k,
+    0 < denom ->
+    0 <= num < denom ->
+    Qle u 1 ->
+    (k <= n)%nat ->
+    (binom_quantile_aux n num denom u fuel k <= n)%nat.
+Proof.
+  intros n num denom u fuel.
+  induction fuel as [|fuel' IH]; intros k Hdenom Hrange Hu_le1 Hk_le_n; simpl.
+  - lia.
+  - destruct (Qle_bool u (binom_cdf_Q n num denom k)) eqn:Hu_le_cdf_k.
+    + lia.
+    + destruct (Nat.leb k n) eqn:Hk_le_n_bool.
+      * apply Nat.leb_le in Hk_le_n_bool.
+        assert (Hk_cases : (k < n \/ k = n)%nat) by lia.
+        destruct Hk_cases as [Hk_lt_n | Hk_eq_n].
+        -- apply IH; try lia; assumption.
+        -- subst k.
+           assert (Hcdf1 : Qeq (binom_cdf_Q n num denom n) 1).
+           { apply binom_cdf_complete; assumption. }
+           assert (Hu_le_cdf_n : Qle u (binom_cdf_Q n num denom n)).
+           { rewrite Hcdf1. exact Hu_le1. }
+           apply Qle_bool_false_iff in Hu_le_cdf_k.
+           contradiction.
+      * lia.
+Qed.
+
+(** Quantile is bounded by n for valid parameters and u <= 1 *)
+Lemma binom_quantile_le_n :
+  forall n num denom u,
+    0 < denom ->
+    0 <= num < denom ->
+    Qle u 1 ->
+    (binom_quantile n num denom u <= n)%nat.
+Proof.
+  intros n num denom u Hdenom Hrange Hu_le1.
+  unfold binom_quantile.
+  apply (binom_quantile_aux_le_n n num denom u (S n) 0); try assumption; lia.
+Qed.
+
+(** u64_to_Q is in (0, 1) for valid prf_output *)
+Lemma u64_to_Q_le_1 :
+  forall prf_output,
+    0 <= prf_output < Z.pow 2 64 ->
+    Qle (u64_to_Q prf_output) 1.
+Proof.
+  intros prf_output [Hlo Hhi].
+  unfold u64_to_Q, Qle. simpl.
+  assert (prf_output * 2 + 1 <= 2^65 - 1) by lia.
+  lia.
+Qed.
+
+(** Range property: result is always in [0, count] *)
+Lemma true_binomial_range :
+  forall count num denom prf_output,
+    0 <= count ->
+    0 <= num < denom ->
+    0 < denom ->
+    0 <= prf_output < Z.pow 2 64 ->
+    0 <= true_binomial_sample_spec count num denom prf_output <= count.
+Proof.
+  intros count num denom prf_output Hcount [Hnum_lo Hnum_hi] Hdenom Hprf.
+  unfold true_binomial_sample_spec.
+  assert (Hdenom_neq: Z.eqb denom 0 = false) by (apply Z.eqb_neq; lia).
+  rewrite Hdenom_neq.
+  destruct (Z.eqb count 0) eqn:Hcount_eq.
+  - apply Z.eqb_eq in Hcount_eq. subst. lia.
+  - destruct (Z.eqb num 0) eqn:Hnum_eq.
+    + lia.
+    + destruct (Z.leb denom num) eqn:Hle.
+      * apply Z.leb_le in Hle. lia.
+      * apply Z.leb_nle in Hle.
+        split.
+        -- apply Nat2Z.is_nonneg.
+        -- assert (Hrange : 0 <= num < denom) by lia.
+           assert (Hu_le1 : Qle (u64_to_Q prf_output) 1) by (apply u64_to_Q_le_1; assumption).
+           pose proof (binom_quantile_le_n (Z.to_nat count) num denom (u64_to_Q prf_output) Hdenom Hrange Hu_le1) as Hqle.
+           apply Nat2Z.inj_le in Hqle.
+           rewrite Z2Nat.id in Hqle by lia.
+           exact Hqle.
 Qed.
 
 Close Scope Z_scope.

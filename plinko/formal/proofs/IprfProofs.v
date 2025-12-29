@@ -179,25 +179,6 @@ Section PRPProperties.
 Context (n : Z).
 Context (Hn_pos : n > 0).
 
-(** PRP forward is in range *)
-Axiom prp_forward_in_range : forall x,
-  0 <= x < n ->
-  0 <= prp_forward n x < n.
-
-(** PRP inverse is in range *)
-Axiom prp_inverse_in_range : forall x,
-  0 <= x < n ->
-  0 <= prp_inverse n x < n.
-
-(** PRP forward/inverse are inverses *)
-Axiom prp_forward_inverse : forall x,
-  0 <= x < n ->
-  prp_inverse n (prp_forward n x) = x.
-
-Axiom prp_inverse_forward : forall x,
-  0 <= x < n ->
-  prp_forward n (prp_inverse n x) = x.
-
 (** PRP forward is injective *)
 Lemma prp_forward_injective : forall x1 x2,
   0 <= x1 < n ->

@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Constant-time HintInit for TEE execution** (`--constant-time` flag): Issue #62
+  - Eliminates timing side-channels that could leak iPRF mappings during hint generation
+  - Uses `IprfTee::inverse_ct` with fixed MAX_PREIMAGES=512 iterations (no early exit)
+  - `BlockBitset` struct for O(1) constant-time block membership testing
+  - Branchless index clamping via `ct_select_usize` to prevent secret-dependent branches
+  - `ct_xor_32_masked` for conditional parity XOR without control flow
+  - Parameter guards: validates MAX_PREIMAGES sufficiency, num_regular/num_backup > 0
+  - Security model: protects against timing side-channels; cache side-channels out of scope
+    (would require ORAM for full memory-access obliviousness)
+  - Verified against Plinko.v Coq spec and paper Fig. 7 HintInit algorithm
 - **TEE constant-time exact binomial sampler** (`binomial_sample_tee`): Issue #41 fix
   - True Binomial(n,p) distribution using inverse-CDF with fixed iterations
   - O(CT_BINOMIAL_MAX_COUNT) complexity with constant-time float comparison and selection
@@ -26,6 +36,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `with_security(key, domain, security_bits)` constructor for explicit security level
 - **Constant-time utilities**: Added `ct_ge_u64` for branchless greater-or-equal comparison
 - **Formal verification**: `SwapOrNotSrSpec.v` with Rocq proofs for SR round involution, range preservation, and bijection properties
+- **Formal verification**: Completed proofs in `SwapOrNotSrSpec.v` - all lemmas now proved (no Admitted)
+  - `sr_forward_inverse_id`, `sr_inverse_forward_id`: SR is a bijection (converted from axioms)
+  - `sr_apply_rounds_inv_in_range`: inverse rounds preserve range
+- **Formal verification**: Completed proofs in `TrueBinomialSpec.v`
+  - `binom_quantile_le_n`: quantile bounded by n (converted from axiom, with proper preconditions)
+  - `binom_cdf_as_Zsum`: CDF equals sum of PMF terms (fully proven)
+  - Added helper lemmas: `Qle_bool_iff`, `binom_cdf_Q_eq`, `u64_to_Q_le_1`
+- **Formal verification**: Linked PRP to SwapOrNot SR in `IprfSpec.v`
+  - `prp_forward`/`prp_inverse` now defined as `sr_forward`/`sr_inverse`
+  - 4 PRP axioms converted to proven lemmas
+- **Formal verification**: Eliminated duplicate axioms
+  - Removed 4 duplicate PRP axioms from `IprfProofs.v`
+  - Removed duplicate `round_key_in_range` from `SwapOrNotProofs.v`
+  - `sr_apply_rounds_inv_inverse`: inverse then forward is identity
+  - `sr_forward_aux_in_range`, `sr_forward_range`: forward preserves range
+  - `sr_inverse_aux_in_range`, `sr_inverse_range`: inverse preserves range
+- **Formal verification**: Eliminated `binomial_sample_range_aux` axiom in `IprfSpec.v`
+  - Added `binomial_sample_range_full` lemma to `BinomialSpec.v` (handles count=0 and count>0)
+  - Fixed `binomial_sample_spec` to return 0 when count=0 (cleaner semantics)
+  - `BinomialSpec.v` and `IprfSpec.v` now have zero axioms
+- **Formal verification**: `TrueBinomialSpec.v` inverse-CDF binomial sampler specification
+  - `binom_quantile_aux_bound`: quantile function is bounded
+  - CDF monotonicity and completeness lemmas
+  - `binom_quantile_le_n`: proven with proper preconditions (0 <= num < denom, u <= 1)
 - **Documentation**: Alex Hoover talk transcript explaining full-domain PRP requirement for Plinko hint reuse security
 - Seed-based subset derivation functions (`derive_subset_seed`, `compute_regular_blocks`, `compute_backup_blocks`)
 - New unit tests for subset seed derivation and block computation

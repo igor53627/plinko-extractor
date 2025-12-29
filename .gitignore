@@ -19,3 +19,4 @@ plinko/formal/artifacts/
 regression-data/*.bin
 regression-data/*.part*
 .agents/reasoner-skills/
+.tmp/

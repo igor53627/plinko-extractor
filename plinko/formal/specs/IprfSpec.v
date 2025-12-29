@@ -14,6 +14,7 @@ From Stdlib Require Import Lia.
 From Stdlib Require Import Bool.
 Require Import Plinko.Specs.CommonTypes.
 Require Import Plinko.Specs.BinomialSpec.
+Require Import Plinko.Specs.SwapOrNotSrSpec.
 
 Import ListNotations.
 Open Scope Z_scope.
@@ -28,28 +29,48 @@ Parameter prf_eval : Z -> Z.
 (** Node ID encoding: (low, high, n) -> node_id *)
 Parameter encode_node : Z -> Z -> Z -> Z.
 
-(** PRP forward permutation *)
-Parameter prp_forward : Z -> Z -> Z.
+(** PRP forward permutation - instantiated via SwapOrNot SR *)
+Definition prp_forward (n x : Z) : Z := sr_forward n x.
 
-(** PRP inverse permutation *)
-Parameter prp_inverse : Z -> Z -> Z.
+(** PRP inverse permutation - instantiated via SwapOrNot SR *)
+Definition prp_inverse (n y : Z) : Z := sr_inverse n y.
 
-(** PRP axioms: we assume PRP is a valid permutation on [0, n) *)
-Axiom prp_forward_in_range : forall n x,
+(** PRP lemmas: PRP is a valid permutation on [0, n) - proved via SR *)
+Lemma prp_forward_in_range : forall n x,
   0 <= x < n ->
   0 <= prp_forward n x < n.
+Proof.
+  intros n x Hx.
+  unfold prp_forward.
+  apply sr_forward_range; lia.
+Qed.
 
-Axiom prp_inverse_in_range : forall n x,
+Lemma prp_inverse_in_range : forall n x,
   0 <= x < n ->
   0 <= prp_inverse n x < n.
+Proof.
+  intros n x Hx.
+  unfold prp_inverse.
+  apply sr_inverse_range; lia.
+Qed.
 
-Axiom prp_forward_inverse : forall n x,
+Lemma prp_forward_inverse : forall n x,
   0 <= x < n ->
   prp_inverse n (prp_forward n x) = x.
+Proof.
+  intros n x Hx.
+  unfold prp_forward, prp_inverse.
+  apply sr_forward_inverse_id; lia.
+Qed.
 
-Axiom prp_inverse_forward : forall n x,
+Lemma prp_inverse_forward : forall n x,
   0 <= x < n ->
   prp_forward n (prp_inverse n x) = x.
+Proof.
+  intros n x Hx.
+  unfold prp_forward, prp_inverse.
+  apply sr_inverse_forward_id; lia.
+Qed.
 
 (** ** PMNS: Pseudorandom Multinomial Sampler *)
 
@@ -344,36 +365,22 @@ Qed.
 
 (** ** Lemmas for trace_ball_inverse *)
 
-(** Binomial sample range axiom for the PMNS algorithm.
-
-    MATHEMATICAL STATUS: This axiom is FALSE for count = 0. When count = 0:
-      binomial_sample_spec 0 num denom prf = (0 * num + r) / denom = r / denom
-    where 0 <= r <= denom, so the result can be 1, violating <= count = 0.
-
-    JUSTIFICATION: In the PMNS algorithm, binomial_sample is used to distribute
-    balls among bins. When ball_count > 0, this bound holds (proven in 
-    binomial_sample_range in BinomialSpec.v). The count = 0 case represents
-    "no balls to distribute" which doesn't occur on algorithm paths that matter
-    for correctness. All meaningful call sites maintain count > 0.
-
-    ALTERNATIVE: Refactor all lemmas to:
-    1. Add 0 < count precondition, or
-    2. Use case analysis with binomial_sample_range_zero for count = 0
-    This requires significant proof restructuring (estimated 1-2 days).
-
-    See also: binomial_sample_range (proven, for count > 0) in BinomialSpec.v *)
-Axiom binomial_sample_range_aux :
+Lemma binomial_sample_range_aux :
   forall count num denom prf_output,
     0 <= count ->
     0 <= num ->
     num < denom ->
     0 < denom ->
     0 <= binomial_sample_spec count num denom prf_output <= count.
+Proof.
+  intros count num denom prf_output Hcount Hnum Hnum_lt Hdenom.
+  apply binomial_sample_range_full; assumption.
+Qed.
 
 
 
 (** Invariant for trace_ball_inverse_fuel: the (start, count) returned satisfy bounds.
-    Note: relies on binomial_sample_range_aux axiom for count >= 0. *)
+    Note: relies on binomial_sample_range_aux for count >= 0. *)
 Lemma trace_ball_inverse_fuel_bounds : forall fuel y st n,
   0 <= tis_ball_start st ->
   0 <= tis_ball_count st ->

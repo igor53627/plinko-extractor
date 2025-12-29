@@ -1,6 +1,34 @@
 //! Constant-time primitives for TEE execution
 //!
 //! These functions are branchless and data-oblivious to prevent timing side-channels.
+//!
+//! # Design Principles
+//!
+//! 1. **No conditional branches on secret data**: All functions use bitwise operations
+//!    and arithmetic instead of `if` statements when the condition depends on secrets.
+//!
+//! 2. **Fixed execution time**: Each function performs the same operations regardless
+//!    of input values. For example, `ct_select_u64` always computes the mask and XOR,
+//!    even when selecting between equal values.
+//!
+//! 3. **Composable building blocks**: Complex constant-time operations are built from
+//!    simple primitives (comparison, selection, masked operations).
+//!
+//! # Security Model
+//!
+//! These primitives protect against timing side-channels but NOT cache side-channels.
+//! Memory access patterns (which cache lines are touched) may still depend on secret
+//! values. For full memory-access obliviousness, ORAM techniques would be required.
+//!
+//! # Usage in Plinko
+//!
+//! The Plinko hint generator uses these primitives in constant-time mode (--constant-time)
+//! to prevent leaking iPRF mappings during TEE execution. Key uses:
+//!
+//! - `ct_lt_u64`: Compare loop index against preimage count
+//! - `ct_select_usize`: Clamp array indices without branching
+//! - `ct_xor_32_masked`: Conditionally XOR parity values
+//! - `ct_f64_le`, `ct_select_f64`: Constant-time binomial sampling in IprfTee
 
 /// Branchless select: returns a if choice is 1, b if choice is 0
 /// choice must be 0 or 1
@@ -61,6 +89,41 @@ pub fn ct_saturating_sub_u64(a: u64, b: u64) -> u64 {
     let a_lt_b = ct_lt_u64(a, b);
     let diff = a.wrapping_sub(b);
     ct_select_u64(a_lt_b, 0, diff)
+}
+
+/// Constant-time XOR with mask: dst ^= src if mask == 1, else no-op.
+///
+/// # Implementation
+///
+/// Uses the identity: `mask.wrapping_neg()` produces:
+/// - `0x00` when mask = 0 (no XOR effect)
+/// - `0xFF` when mask = 1 (full XOR)
+///
+/// This avoids branching on the mask value while achieving conditional XOR.
+///
+/// # Invariant
+///
+/// Caller must ensure `mask` is either 0 or 1. Other values produce incorrect results.
+/// In Plinko's CT HintInit, masks are derived from `ct_lt_u64` which guarantees this.
+#[inline]
+pub fn ct_xor_32_masked(dst: &mut [u8; 32], src: &[u8; 32], mask: u64) {
+    let m = (mask.wrapping_neg()) as u8;
+    for i in 0..32 {
+        dst[i] ^= src[i] & m;
+    }
+}
+
+/// Constant-time select for u8: returns a if choice == 1, b if choice == 0
+#[inline]
+pub fn ct_select_u8(choice: u64, a: u8, b: u8) -> u8 {
+    let mask = (choice.wrapping_neg()) as u8;
+    b ^ (mask & (a ^ b))
+}
+
+/// Constant-time select for usize: returns a if choice == 1, b if choice == 0
+#[inline]
+pub fn ct_select_usize(choice: u64, a: usize, b: usize) -> usize {
+    ct_select_u64(choice, a as u64, b as u64) as usize
 }
 
 /// Constant-time f64 comparison: returns 1 if a <= b, 0 otherwise.

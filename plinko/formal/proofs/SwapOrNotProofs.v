@@ -121,8 +121,6 @@ Qed.
     Section 3: Round is an Involution
     ============================================================================ *)
 
-Axiom round_key_in_range : forall r, 0 <= round_key r < N.
-
 (** Each round is an involution: round(round(x)) = x
     
     Key insight: Both x and partner(x) see the same canonical = max(x, partner(x)),

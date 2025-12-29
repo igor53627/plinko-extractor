@@ -13,11 +13,19 @@
       "author": "maintainer"
     },
     {
+      "content": "Constant-time HintInit (--constant-time flag) for TEE execution: Uses IprfTee::inverse_ct with fixed MAX_PREIMAGES=512 iterations, BlockBitset for O(1) membership testing, ct_select_usize for branchless index clamping, and ct_xor_32_masked for conditional XOR. Protects against timing side-channels; cache side-channels are out of scope (would require ORAM). Verified against Plinko.v Coq spec and paper Fig. 7.",
+      "author": "maintainer"
+    },
+    {
       "content": "Key video resource: Alex Hoover's talk 'Plinko - Single-Server PIR with Efficient Updates via Invertible PRFs' at https://www.youtube.com/watch?v=okJaBn7ZXnc",
       "author": "maintainer"
     },
     {
       "content": "The PRP uses Morris-Rogaway Sometimes-Recurse (SR) wrapper for full-domain security. Round counts follow paper-faithful formula: t_N = ceil(7.23 lg N + 4.82 lambda + 4.82 lg p) from Morris-Rogaway 2013/560 Section 5. Default is 128-bit security.",
+      "author": "maintainer"
+    },
+    {
+      "content": "Formal verification status (Dec 2025): Core properties proven (SR bijection, iPRF partition, binomial range). Intentional axioms: crypto (AES-128, key derivation), math (binomial_theorem_Z), FFI (Rust refinement). One Admitted proof: hint_init_backup_streaming_eq_batch in HintInitSim.v (fold equivalence, no crypto assumptions).",
       "author": "maintainer"
     }
   ],
@@ -38,7 +46,7 @@
     },
     {
       "title": "Hint Generation",
-      "purpose": "Document state-syncer/src/bin/plinko_hints.rs: streaming HintInit, regular/backup hints, seed-based storage",
+      "purpose": "Document state-syncer/src/bin/plinko_hints.rs: streaming HintInit, regular/backup hints, seed-based storage, constant-time mode (--constant-time) for TEE execution with BlockBitset, ct_select_usize, ct_xor_32_masked",
       "parent": "Plinko Protocol"
     },
     {
@@ -48,7 +56,7 @@
     },
     {
       "title": "Formal Verification",
-      "purpose": "Document plinko/formal/: Rocq specs, proofs, linking layer, CI verification workflow",
+      "purpose": "Document plinko/formal/: Rocq specs (SwapOrNotSpec, SwapOrNotSrSpec, IprfSpec, BinomialSpec, TrueBinomialSpec), proofs (SwapOrNotProofs, IprfProofs), linking layer, CI verification workflow. Trust base: crypto axioms (AES-128, key derivation), math axiom (binomial_theorem_Z), FFI axioms (Rust refinement).",
       "parent": "Architecture Overview"
     },
     {

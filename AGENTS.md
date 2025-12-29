@@ -1,5 +1,98 @@
 # Plinko Extractor - Agent Rules
 
+## Code Environment
+
+- **Codex Code Env ID**: `694e8588110c8191945f9b9dfbf0b7d1`
+
+## Codex Cloud Tasks
+
+For complex or long-running tasks (formal proofs, large refactors), use Codex Cloud:
+
+```bash
+# Submit a task to Codex Cloud (runs remotely with gpt-5.2-codex + xhigh reasoning)
+codex cloud exec --env 694e8588110c8191945f9b9dfbf0b7d1 --attempts 3 "Your task description"
+
+# Check task status
+codex cloud status <task_id>
+
+# View diff from completed task
+codex cloud diff <task_id>
+
+# Apply changes locally
+codex cloud apply <task_id>
+```
+
+Options:
+- `--attempts N`: Run N parallel attempts (best-of-N), use 3 for complex proofs
+- `--branch <branch>`: Target a specific git branch
+
+## Codex Cloud + Remote Rocq Verification
+
+For Coq/Rocq proof synthesis with verification, use the remote build server.
+See [docs/codex-cloud-verification.md](docs/codex-cloud-verification.md) for full details.
+
+### Quick Start
+
+```bash
+# Submit proof task with verification
+codex cloud exec --env 694e8588110c8191945f9b9dfbf0b7d1 --attempts 3 "
+Prove \`lemma_name\` in plinko/formal/specs/SomeSpec.v
+
+Verify using:
+curl -s -X POST http://108.61.166.134/verify-project \\
+  -H 'Content-Type: application/json' \\
+  -d '{\"files\": {...}, \"main\": \"Plinko/Specs/SomeSpec.v\", \"timeout\": 120}'
+
+Read .v files from plinko/formal/specs/, key as Plinko/Specs/<name>.v.
+"
+```
+
+### Verification Server
+
+- **Host**: `108.61.166.134:80`
+- **Endpoints**: `GET /health`, `POST /verify`, `POST /verify-project`
+- **Service**: `rocq-verify.service` (Python API + Rocq 9.1.0)
+
+### Check Server Status
+
+```bash
+ssh root@108.61.166.134 "systemctl status rocq-verify nginx"
+ssh root@108.61.166.134 "tail -f /var/log/nginx/access.log"
+```
+
+### Evaluating Multiple Attempts
+
+When using `--attempts N`, always check ALL attempts before applying:
+
+```bash
+# View each attempt's diff
+for i in 1 2 3; do echo "=== Attempt $i ==="; codex cloud diff <task_id> --attempt $i | head -20; done
+
+# Apply specific attempt
+codex cloud apply <task_id> --attempt <N>
+```
+
+**Evaluation criteria (in priority order):**
+
+1. **Compiles** - Must verify with remote Rocq server (mandatory, disqualifies if fails)
+2. **No new axioms/Admitted** - Solution shouldn't introduce new proof debt
+3. **Minimal changes** - Fewer lines = less risk of breaking other proofs
+4. **Semantic correctness** - Doesn't change function definitions unless necessary
+5. **Proof quality**:
+   - Direct proofs > convoluted ones
+   - Reuses existing lemmas > duplicates logic
+   - Clear structure (induction base/step separated)
+6. **Helper lemmas** - General/reusable > one-off hacks
+
+**Quick comparison:**
+```bash
+# Line count per attempt
+for i in 1 2 3; do echo "Attempt $i: $(codex cloud diff <task_id> --attempt $i 2>&1 | grep -c '^[+-]') lines"; done
+
+# Check for new Admitted/Axiom
+for i in 1 2 3; do echo "Attempt $i:"; codex cloud diff <task_id> --attempt $i 2>&1 | grep -E "^\+.*Admitted|^\+.*Axiom"; done
+```
+
 ## Canonical Protocol Reference
 
 **`docs/plinko_paper_index.json`** is the canonical source of truth for Plinko protocol implementation details. It indexes:
@@ -39,10 +132,10 @@ cd state-syncer && cargo build --release --bin plinko_hints
   --db-path /mnt/mainnet/plinko/database.bin \
   --lambda 128
 
-# Generate hints (XOF mode - faster)
+# Generate hints (constant-time mode for TEE)
 ./state-syncer/target/release/plinko_hints \
   --db-path /mnt/mainnet/plinko/database.bin \
-  --lambda 128 --xof
+  --lambda 128 --constant-time
 ```
 
 ## Data Format
@@ -91,6 +184,13 @@ Before committing Rust changes to hint generation or iPRF:
 | Coq HintInit | `docs/Plinko.v` (hint_init, process_db_entry) |
 | iPRF Spec | `plinko/formal/specs/IprfSpec.v` |
 | PRP Spec | `plinko/formal/specs/SwapOrNotSpec.v` |
+
+## Documentation Sync Rules
+
+When modifying `state-syncer/src/bin/hint_gen/`:
+- Update `docs/hint_generation.md` if module structure or API changes
+- Update `docs/constant_time_mode.md` if CT security model changes
+- Keep the module table in `docs/hint_generation.md` current with file sizes
 
 ## Devin DeepWiki
 
