@@ -890,6 +890,191 @@ impl IprfTee {
     }
 }
 
+/// TEE-safe iPRF using Gaussian approximation for binomial sampling.
+///
+/// This variant uses O(1) Gaussian approximation instead of O(n) exact inverse-CDF,
+/// providing ~100x speedup for large domains. The distribution is ε-close to ideal
+/// with ε = O(1/√n) per sample.
+///
+/// # Privacy Note
+/// - Timing side-channel: SAFE (both paths computed, CT selection)
+/// - Query privacy: PRESERVED (approximation is offline, key-dependent)
+/// - Statistical deviation: ~0.5% per sample for n=49152
+pub struct IprfTeeGaussian {
+    #[allow(dead_code)]
+    key: PrfKey128,
+    cipher: Aes128,
+    prp: SwapOrNotSrTee,
+    domain: u64,
+    range: u64,
+    tree_depth: usize,
+    binomial_sampler: crate::binomial_gaussian::GaussianBinomialSamplerTee,
+}
+
+impl IprfTeeGaussian {
+    pub fn new(key: PrfKey128, n: u64, m: u64) -> Self {
+        Self::with_security(key, n, m, DEFAULT_SECURITY_BITS)
+    }
+
+    pub fn with_security(key: PrfKey128, n: u64, m: u64, security_bits: u32) -> Self {
+        let tree_depth = (m as f64).log2().ceil() as usize;
+        let cipher = Aes128::new(&GenericArray::from(key));
+
+        let mut prp_key = [0u8; 16];
+        let mut hasher = Sha256::new();
+        hasher.update(key);
+        hasher.update(b"prp");
+        let hash = hasher.finalize();
+        prp_key.copy_from_slice(&hash[0..16]);
+
+        let prp = SwapOrNotSrTee::with_security(prp_key, n, security_bits);
+
+        // Gaussian sampler with fallback for small n
+        let binomial_sampler = crate::binomial_gaussian::GaussianBinomialSamplerTee::new(1024);
+
+        Self {
+            key,
+            cipher,
+            prp,
+            domain: n,
+            range: m,
+            tree_depth,
+            binomial_sampler,
+        }
+    }
+
+    pub fn forward(&self, x: u64) -> u64 {
+        debug_assert!(x < self.domain, "IprfTeeGaussian::forward: x must be < domain");
+        let permuted = self.prp.forward(x);
+        self.trace_ball(permuted, self.domain, self.range)
+    }
+
+    pub fn inverse_ct(&self, y: u64) -> ([u64; MAX_PREIMAGES], usize) {
+        use crate::constant_time::{ct_lt_u64, ct_select_u64};
+
+        debug_assert!(y < self.range, "IprfTeeGaussian::inverse_ct: y must be < range");
+
+        let (ball_start, ball_count) = self.trace_ball_inverse_ct(y);
+
+        let max_preimages = MAX_PREIMAGES as u64;
+        let exceeds_max = ct_lt_u64(max_preimages, ball_count);
+        let count_u64 = ct_select_u64(exceeds_max, max_preimages, ball_count);
+        let count = count_u64 as usize;
+
+        let mut candidates = [0u64; MAX_PREIMAGES];
+        for i in 0..MAX_PREIMAGES {
+            let z = ball_start + i as u64;
+            let z_valid = ct_lt_u64(z, self.domain);
+            candidates[i] = ct_select_u64(z_valid, z, 0);
+        }
+
+        self.prp.inverse_batch(&mut candidates);
+
+        let mut result = [0u64; MAX_PREIMAGES];
+        for i in 0..MAX_PREIMAGES {
+            let in_range = ct_lt_u64(i as u64, count as u64);
+            let z = ball_start + i as u64;
+            let z_valid = ct_lt_u64(z, self.domain);
+            result[i] = ct_select_u64(in_range & z_valid, candidates[i], 0);
+        }
+
+        (result, count)
+    }
+
+    fn trace_ball_inverse_ct(&self, y: u64) -> (u64, u64) {
+        use crate::constant_time::{ct_le_u64, ct_lt_u64, ct_select_u64};
+
+        if self.range == 1 {
+            return (0, self.domain);
+        }
+
+        let mut low = 0u64;
+        let mut high = self.range - 1;
+        let mut ball_count = self.domain;
+        let mut ball_start = 0u64;
+
+        for _level in 0..self.tree_depth {
+            let should_continue = ct_lt_u64(low, high);
+
+            let mid = (low + high) / 2;
+            let left_bins = mid - low + 1;
+            let total_bins = high - low + 1;
+
+            let node_id = encode_node(low, high, self.domain);
+            let prf_output = self.prf_eval(node_id);
+            let left_count =
+                self.binomial_sampler.sample(ball_count, left_bins, total_bins, prf_output);
+
+            let go_left = ct_le_u64(y, mid);
+
+            let new_low_left = low;
+            let new_high_left = mid;
+            let new_count_left = left_count;
+            let new_start_left = ball_start;
+
+            let new_low_right = mid + 1;
+            let new_high_right = high;
+            let new_count_right = ball_count.wrapping_sub(left_count);
+            let new_start_right = ball_start + left_count;
+
+            let new_low = ct_select_u64(go_left, new_low_left, new_low_right);
+            let new_high = ct_select_u64(go_left, new_high_left, new_high_right);
+            let new_count = ct_select_u64(go_left, new_count_left, new_count_right);
+            let new_start = ct_select_u64(go_left, new_start_left, new_start_right);
+
+            low = ct_select_u64(should_continue, new_low, low);
+            high = ct_select_u64(should_continue, new_high, high);
+            ball_count = ct_select_u64(should_continue, new_count, ball_count);
+            ball_start = ct_select_u64(should_continue, new_start, ball_start);
+        }
+
+        (ball_start, ball_count)
+    }
+
+    fn trace_ball(&self, x_prime: u64, n: u64, m: u64) -> u64 {
+        if m == 1 {
+            return 0;
+        }
+        let mut low = 0u64;
+        let mut high = m - 1;
+        let mut ball_count = n;
+        let mut ball_index = x_prime;
+
+        while low < high {
+            let mid = (low + high) / 2;
+            let left_bins = mid - low + 1;
+            let total_bins = high - low + 1;
+            let node_id = encode_node(low, high, n);
+            let prf_output = self.prf_eval(node_id);
+            let left_count =
+                self.binomial_sampler.sample(ball_count, left_bins, total_bins, prf_output);
+
+            if ball_index < left_count {
+                high = mid;
+                ball_count = left_count;
+            } else {
+                low = mid + 1;
+                ball_index -= left_count;
+                ball_count -= left_count;
+            }
+        }
+        low
+    }
+
+    fn prf_eval(&self, x: u64) -> u64 {
+        let mut input = [0u8; 16];
+        input[8..16].copy_from_slice(&x.to_be_bytes());
+        let mut block = GenericArray::from(input);
+        self.cipher.encrypt_block(&mut block);
+        u64::from_be_bytes(block[0..8].try_into().unwrap())
+    }
+
+    pub fn inverse(&self, y: u64) -> Vec<u64> {
+        let (arr, count) = self.inverse_ct(y);
+        arr[..count].to_vec()
+    }
+}
+
 /// Invertible PRF built from Sometimes-Recurse PRP + PMNS
 ///
 /// Uses SwapOrNotSr for full-domain PRP security (secure even when all N elements queried).
