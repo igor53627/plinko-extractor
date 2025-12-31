@@ -1,7 +1,11 @@
 [package]
-name = "plinko-extractor"
+name = "plinko-rs"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "plinko-extractor"
+path = "src/main.rs"
 
 [dependencies]
 # CLI
@@ -24,5 +28,5 @@ byteorder = "1.5"
 chrono = "0.4"
 
 [workspace]
-members = ["state-syncer"]
+members = ["plinko"]
 
